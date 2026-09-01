@@ -21,6 +21,8 @@ export type SseEvent =
   | { type: "conversation.updated"; data: { conversation: unknown } }
   /** 015 — algo cambió en la agenda: la pantalla de Citas se refresca sola. */
   | { type: "booking.updated"; data: { bookingId: string } }
+  /** 017 (fork RPM) — algo cambió en una reserva de maquinaria. */
+  | { type: "rental.updated"; data: { rentalId: string } }
   | {
       type: "lab.run";
       data: {
