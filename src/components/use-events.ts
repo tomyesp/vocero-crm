@@ -20,6 +20,8 @@ export type EventHandlers = {
   }) => void;
   /** 015 — Algo cambió en la agenda (también cuando agenda la IA). */
   onBookingUpdated?: (data: { bookingId: string }) => void;
+  /** 017 (fork RPM) — Algo cambió en una reserva de maquinaria. */
+  onRentalUpdated?: (data: { rentalId: string }) => void;
   /** Se llama tras RECONECTAR (no en la conexión inicial): catch-up con refetch. */
   onReconnect?: () => void;
 };
@@ -57,6 +59,9 @@ export function useEvents(handlers: EventHandlers): void {
     listen("lab.run", (d) => handlersRef.current.onLabRun?.(d as never));
     listen("booking.updated", (d) =>
       handlersRef.current.onBookingUpdated?.(d as never)
+    );
+    listen("rental.updated", (d) =>
+      handlersRef.current.onRentalUpdated?.(d as never)
     );
 
     source.onerror = () => {

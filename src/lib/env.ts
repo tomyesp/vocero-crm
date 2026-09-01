@@ -38,6 +38,9 @@ const envSchema = z.object({
   // conversacion, no se le reporta nada a Meta y la superficie da 404.
   // Ej.: ATRIBUCION=on
   ATRIBUCION: z.string().optional(),
+  // 017 (fork RPM): inventario de maquinaria. Apagado por defecto — sin el,
+  // /maquinas, /tarifas, /reservas y sus APIs responden 404. Ej.: INVENTARIO=on
+  INVENTARIO: z.string().optional(),
   // 015: bases de los conectores. Solo se sobreescriben para apuntar a los
   // mocks en el self-test; en producción se usan las reales.
   ZOOM_BASE_URL: z.string().url().default("https://api.zoom.us/v2"),

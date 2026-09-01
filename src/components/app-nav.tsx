@@ -5,12 +5,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
+  CalendarRange,
   FlaskConical,
   Inbox,
   Kanban,
   LogOut,
   Settings,
   Sparkles,
+  Tag,
+  Truck,
   Users,
   X,
 } from "lucide-react";
@@ -44,6 +47,13 @@ const AGENDA_ITEM: NavItem = {
   icon: CalendarDays,
 };
 
+/** 017 (fork RPM) — Inventario de maquinaria, detrás de `INVENTARIO`. */
+const INVENTORY_ITEMS: NavItem[] = [
+  { href: "/reservas", label: "Reservas", icon: CalendarRange },
+  { href: "/maquinas", label: "Máquinas", icon: Truck },
+  { href: "/tarifas", label: "Tarifas", icon: Tag },
+];
+
 export function AppNav({
   branding,
   userName,
@@ -51,6 +61,7 @@ export function AppNav({
   theme,
   commit,
   agenda = false,
+  inventario = false,
   open = false,
   onClose,
 }: {
@@ -69,6 +80,8 @@ export function AppNav({
    * todavía debe mostrar igual su pantalla.
    */
   agenda?: boolean;
+  /** 017 (fork RPM) — ¿hay inventario de maquinaria? Mismo criterio que agenda. */
+  inventario?: boolean;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */
   open?: boolean;
   onClose?: () => void;
@@ -98,9 +111,13 @@ export function AppNav({
   const sha = commit || BUILD_COMMIT;
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
-  const items = agenda
-    ? [...NAV.slice(0, 2), AGENDA_ITEM, ...NAV.slice(2)]
-    : NAV;
+  let items = agenda ? [...NAV.slice(0, 2), AGENDA_ITEM, ...NAV.slice(2)] : NAV;
+  // 017 — Reservas/Máquinas/Tarifas van después de Pipeline: son la operación
+  // diaria del negocio de alquiler, no una sección de configuración.
+  if (inventario) {
+    const cut = agenda ? 3 : 2;
+    items = [...items.slice(0, cut), ...INVENTORY_ITEMS, ...items.slice(cut)];
+  }
 
   return (
     <aside

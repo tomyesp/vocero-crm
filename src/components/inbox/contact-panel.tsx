@@ -14,6 +14,8 @@ import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FichaPanel } from "@/components/ficha-panel";
+// 017 (fork RPM) — sección autocontenida; se oculta sola si no hay inventario.
+import { ContactRentals } from "@/components/inventory/contact-rentals";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -315,6 +317,9 @@ export function ContactPanel({
         {/* Ficha: lo que se SABE del lead. Va antes de Notas —lo que alguien
             OPINA— porque es lo que se consulta a mitad de una conversación. */}
         <FichaPanel ficha={ficha} onSave={saveFicha} />
+
+        {/* 017 (fork RPM) — reservas de maquinaria del lead. */}
+        <ContactRentals contactId={contactId} refreshKey={refreshKey} />
 
         {/* Notas */}
         <section className="p-4">
