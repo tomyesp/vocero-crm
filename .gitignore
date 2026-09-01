@@ -39,6 +39,7 @@ Thumbs.db
 .claude/settings.local.json
 .playwright-mcp/
 .tmp-seed-demo.mjs
+.tmp-seed-inventory.mjs
 .dev-media/
 # Capturas y salidas de los self-tests (p. ej. scripts/e2e-responsive.mjs)
 scratch/

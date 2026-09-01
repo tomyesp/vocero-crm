@@ -29,6 +29,13 @@ const prefixes = {
   adAttribution: "att",
   conversionEvent: "cve",
   capiSettings: "capi",
+  // 017 — inventario de maquinaria (fork RPM)
+  machineCategory: "mcat",
+  machineModel: "mmod",
+  machineUnit: "munit",
+  rateCard: "rate",
+  rental: "rent",
+  rentalOffer: "roff",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

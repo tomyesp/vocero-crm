@@ -12,6 +12,8 @@ const config = [
       "scripts/**",
       "next-env.d.ts",
       ".tmp-seed-demo.mjs",
+      // 017 — bundle temporal del seed de inventario, mismo caso que el demo.
+      ".tmp-seed-inventory.mjs",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),

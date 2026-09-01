@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -10,6 +11,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { tstzrange } from "./types";
 
 /* ============================================================
  * Auth (Better Auth + plugin organization)
@@ -975,4 +977,249 @@ export const capiSettings = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("capi_settings_org_uq").on(t.organizationId)]
+);
+
+/* ============================================================
+ * 017 — Inventario de maquinaria (fork RPM Construcciones)
+ *
+ * Alquiler de maquinaria de construcción. Reglas de modelado innegociables:
+ * la disponibilidad NUNCA se almacena (se calcula contra `rental`), el
+ * cliente pregunta por un MODELO pero se alquila una UNIDAD física, y el
+ * agente externo solo puede reservar una oferta que el servidor emitió
+ * (`rentalOffer`, el mismo protocolo que `offeredSlot` en la agenda).
+ * ============================================================ */
+
+/** Categoría del catálogo (retroexcavadoras, minicargadoras, hidrogrúas…). */
+export const machineCategory = pgTable(
+  "machine_category",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("machine_category_org_slug_uq").on(t.organizationId, t.slug)]
+);
+
+/**
+ * El modelo comercial: lo que el lead pide por nombre ("una retro JCB").
+ * Las unidades físicas cuelgan de él — con 3 retros iguales el sistema puede
+ * decir "1 de 3 libre" en vez de un booleano mentiroso.
+ */
+export const machineModel = pgTable(
+  "machine_model",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /**
+     * `restrict` a propósito: borrar una categoría con modelos vivos es un
+     * error de operación, no una intención — se vacía primero.
+     */
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => machineCategory.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    brand: text("brand"),
+    /** Specs por categoría (`{"potencia_hp":92,"prof_excavacion_m":5.4}`). */
+    specs: jsonb("specs").notNull().default(sql`'{}'::jsonb`),
+    description: text("description"),
+    /** Ids de `mediaAsset` (storage local — la constitución veta terceros). */
+    photos: jsonb("photos").notNull().default(sql`'[]'::jsonb`),
+    /** Hidrogrúas y equipos que solo se alquilan con operario del negocio. */
+    requiresOperator: boolean("requires_operator").notNull().default(false),
+    /** Apagado = no aparece en catálogo ni en disponibilidad; no se borra. */
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("machine_model_org_cat_idx").on(t.organizationId, t.categoryId)]
+);
+
+/**
+ * La unidad física que sale a obra. OJO: `status` NO incluye "alquilada" —
+ * que esté alquilada surge de sus reservas activas, nunca de un campo que
+ * alguien tiene que acordarse de actualizar.
+ */
+export const machineUnit = pgTable(
+  "machine_unit",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    modelId: text("model_id")
+      .notNull()
+      .references(() => machineModel.id, { onDelete: "restrict" }),
+    /** Nro. interno de flota pintado en la máquina ("RETRO-02"). */
+    internalCode: text("internal_code").notNull(),
+    year: integer("year"),
+    /** Horómetro aproximado; la disponibilidad elige la de MENOS horas. */
+    usageHours: integer("usage_hours").notNull().default(0),
+    status: text("status", { enum: ["operativa", "mantenimiento", "baja"] })
+      .notNull()
+      .default("operativa"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("machine_unit_org_code_uq").on(t.organizationId, t.internalCode),
+    index("machine_unit_org_model_idx").on(t.organizationId, t.modelId),
+  ]
+);
+
+/**
+ * Tarifario con vigencia temporal: NUNCA se sobrescribe una tarifa — se
+ * cierra `validTo` y se crea otra fila. Una cotización vieja siempre puede
+ * explicarse con la tarifa que regía ese día.
+ *
+ * Montos en CENTAVOS de la moneda del negocio, como `lead.amountCents`, pero
+ * en bigint: un alquiler largo en ARS revienta el int4 en centavos.
+ */
+export const rateCard = pgTable(
+  "rate_card",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    modelId: text("model_id")
+      .notNull()
+      .references(() => machineModel.id, { onDelete: "cascade" }),
+    dailyCents: bigint("daily_cents", { mode: "number" }).notNull(),
+    /** NULL = ese escalón no se ofrece y se cotiza con el diario. */
+    weeklyCents: bigint("weekly_cents", { mode: "number" }),
+    monthlyCents: bigint("monthly_cents", { mode: "number" }),
+    transferBaseCents: bigint("transfer_base_cents", { mode: "number" })
+      .notNull()
+      .default(0),
+    transferPerKmCents: bigint("transfer_per_km_cents", { mode: "number" })
+      .notNull()
+      .default(0),
+    operatorDailyCents: bigint("operator_daily_cents", { mode: "number" })
+      .notNull()
+      .default(0),
+    validFrom: timestamp("valid_from").notNull().defaultNow(),
+    /** NULL = vigente hoy. */
+    validTo: timestamp("valid_to"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("rate_card_org_model_from_idx").on(
+      t.organizationId,
+      t.modelId,
+      t.validFrom
+    ),
+  ]
+);
+
+/**
+ * La reserva de una unidad. Una sola tabla para alquileres y bloqueos de
+ * mantenimiento (un bloqueo es una reserva sin contacto que ocupa flota
+ * igual), calcando el criterio de `booking.kind`.
+ *
+ * El anti-solape ATÓMICO vive en la migración como constraint de EXCLUSIÓN
+ * GiST sobre (`unit_id`, `period`) para estados activos y `is_test = false`
+ * — Drizzle no sabe declararlo. Dos reservas simultáneas del mismo rango no
+ * pueden ganar las dos: la perdedora recibe un 23P01 que el servicio traduce
+ * a `recien_tomada` con alternativas frescas.
+ */
+export const rental = pgTable(
+  "rental",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    unitId: text("unit_id")
+      .notNull()
+      .references(() => machineUnit.id, { onDelete: "restrict" }),
+    kind: text("kind", { enum: ["alquiler", "mantenimiento"] })
+      .notNull()
+      .default("alquiler"),
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "set null",
+    }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * `[desde, hasta)` — el día de devolución queda libre. El buffer de
+     * traslado NO se guarda aquí: se suma al rango al CONSULTAR disponibilidad,
+     * así cambiar el buffer no reescribe reservas ya tomadas.
+     */
+    period: tstzrange("period").notNull(),
+    /**
+     * El agente crea `tentativa` y AHÍ TERMINA su poder: confirmar, cancelar
+     * y modificar son acciones de UI que solo hace una persona. Una tentativa
+     * mal creada expira sola (`expiresAt`); una confirmación mala bloquea una
+     * máquina real.
+     */
+    status: text("status", {
+      enum: ["tentativa", "confirmada", "en_curso", "finalizada", "cancelada"],
+    })
+      .notNull()
+      .default("tentativa"),
+    /** Solo tentativas: pasada esta hora, el job las cancela y libera flota. */
+    expiresAt: timestamp("expires_at"),
+    createdBy: text("created_by", { enum: ["agente", "humano"] })
+      .notNull()
+      .default("humano"),
+    quotedAmountCents: bigint("quoted_amount_cents", { mode: "number" }),
+    withTransfer: boolean("with_transfer").notNull().default(false),
+    siteLocation: text("site_location"),
+    /** Conversación del Laboratorio: nunca consume flota real (ver EXCLUDE). */
+    isTest: boolean("is_test").notNull().default(false),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("rental_org_status_idx").on(t.organizationId, t.status),
+    index("rental_unit_idx").on(t.unitId),
+    index("rental_org_conv_idx").on(t.organizationId, t.conversationId),
+  ]
+);
+
+/**
+ * La memoria de lo ofrecido, calcando `offeredSlot`: sin fila aquí no hay
+ * reserva. El LLM no puede inventar una máquina, una fecha ni un precio —
+ * solo elegir un `rentalOffer` que este servidor emitió en ESA conversación,
+ * antes de que expire y una sola vez.
+ */
+export const rentalOffer = pgTable(
+  "rental_offer",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    modelId: text("model_id")
+      .notNull()
+      .references(() => machineModel.id, { onDelete: "cascade" }),
+    unitId: text("unit_id")
+      .notNull()
+      .references(() => machineUnit.id, { onDelete: "cascade" }),
+    period: tstzrange("period").notNull(),
+    /** El precio EXACTO que se le dijo al lead; la reserva lo copia. */
+    quotedAmountCents: bigint("quoted_amount_cents", { mode: "number" }).notNull(),
+    /** La etiqueta EXACTA que vio el cliente ("Retro JCB 3CX, 10 al 20/1"). */
+    label: text("label").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    /** Consumo único: reservar la marca; una oferta consumida no se reusa. */
+    consumedAt: timestamp("consumed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("rental_offer_conv_idx").on(t.conversationId, t.expiresAt),
+  ]
 );
