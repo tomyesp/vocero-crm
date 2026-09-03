@@ -4,6 +4,9 @@ import { apiError } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { serializeFicha } from "@/server/bot/ficha";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
+// 017 (fork RPM) — origen de anuncio: contexto de apertura + ventana de 72h.
+import { atribucionEnabled } from "@/server/attribution/flag";
+import { getAttributionForConversation } from "@/server/attribution/store";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +97,14 @@ export async function GET(req: Request) {
     return apiError(404, "not_found", "Conversación no encontrada");
   }
 
+  // 017 — de qué anuncio vino la conversación (null si atribución apagada o
+  // lead orgánico). Nea lo usa como contexto de apertura, y su `createdAt`
+  // abre el free entry point de 72h.
+  const attribution = atribucionEnabled()
+    ? await getAttributionForConversation(organizationId, conversation.id)
+    : null;
+  const ctwaStart = attribution?.createdAt ?? null;
+
   const leadRows = await db
     .select({ lead: schema.lead, stage: schema.pipelineStage })
     .from(schema.lead)
@@ -127,11 +138,26 @@ export async function GET(req: Request) {
       // aunque el flag siga en true.
       aiEnabled: conversation.aiEnabled && !conversation.handoffAt,
       handoffAt: conversation.handoffAt?.toISOString() ?? null,
-      windowOpen: isWindowOpen(conversation.lastInboundAt),
-      windowRemainingMs: windowRemainingMs(conversation.lastInboundAt),
+      windowOpen: isWindowOpen(conversation.lastInboundAt, new Date(), ctwaStart),
+      windowRemainingMs: windowRemainingMs(
+        conversation.lastInboundAt,
+        new Date(),
+        ctwaStart
+      ),
     },
     lead: leadRows[0]
       ? { id: leadRows[0].lead.id, stageName: leadRows[0].stage.name }
+      : null,
+    // 017 — null = lead orgánico (o atribución apagada).
+    ad: attribution
+      ? {
+          sourceId: attribution.sourceId,
+          sourceType: attribution.sourceType,
+          headline: attribution.headline,
+          body: attribution.body,
+          ctwaClid: attribution.ctwaClid,
+          startedAt: attribution.createdAt.toISOString(),
+        }
       : null,
   });
 }

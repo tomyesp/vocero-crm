@@ -224,6 +224,71 @@ describe.runIf(dbAvailable)("inventario contra Postgres real", () => {
     expect(otraVez.ok).toBe(false);
   });
 
+  it("el job de expiración cancela la tentativa vencida y libera la unidad", async () => {
+    const { getDb, schema } = await import("@/lib/db");
+    const { newId } = await import("@/lib/db/ids");
+    const { eq } = await import("drizzle-orm");
+    const { expireTentativesOnce } = await import("@/server/inventory/expiration");
+    const { findAvailableUnits } = await import("@/server/inventory/availability");
+    const db = getDb();
+
+    const period = { from: day(70), to: day(75) };
+    const rentalId = newId("rental");
+    await db.insert(schema.rental).values({
+      id: rentalId,
+      organizationId: orgId,
+      unitId: unitB,
+      period,
+      status: "tentativa",
+      createdBy: "agente",
+      expiresAt: new Date(Date.now() - 60_000), // venció hace un minuto
+    });
+
+    // Mientras la tentativa vive, la unidad está tomada.
+    const ocupada = await findAvailableUnits(orgId, modelId, period, 0);
+    expect(ocupada.map((u) => u.id)).not.toContain(unitB);
+
+    const cancelled = await expireTentativesOnce();
+    expect(cancelled).toBeGreaterThanOrEqual(1);
+
+    const rows = await db
+      .select({ status: schema.rental.status })
+      .from(schema.rental)
+      .where(eq(schema.rental.id, rentalId));
+    expect(rows[0]?.status).toBe("cancelada");
+
+    // Y la flota vuelve a estar libre sin que nadie toque nada.
+    const libre = await findAvailableUnits(orgId, modelId, period, 0);
+    expect(libre.map((u) => u.id)).toContain(unitB);
+  });
+
+  it("una tentativa VIGENTE no la toca el job", async () => {
+    const { getDb, schema } = await import("@/lib/db");
+    const { newId } = await import("@/lib/db/ids");
+    const { eq } = await import("drizzle-orm");
+    const { expireTentativesOnce } = await import("@/server/inventory/expiration");
+    const db = getDb();
+
+    const rentalId = newId("rental");
+    await db.insert(schema.rental).values({
+      id: rentalId,
+      organizationId: orgId,
+      unitId: unitB,
+      period: { from: day(80), to: day(85) },
+      status: "tentativa",
+      createdBy: "agente",
+      expiresAt: new Date(Date.now() + 60 * 60_000),
+    });
+
+    await expireTentativesOnce();
+
+    const rows = await db
+      .select({ status: schema.rental.status })
+      .from(schema.rental)
+      .where(eq(schema.rental.id, rentalId));
+    expect(rows[0]?.status).toBe("tentativa");
+  });
+
   it("dos reservas CONCURRENTES sobre la misma unidad: la base deja pasar UNA", async () => {
     const { getDb, schema } = await import("@/lib/db");
     const { newId } = await import("@/lib/db/ids");

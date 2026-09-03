@@ -9,6 +9,8 @@ import {
   type Credentials,
 } from "@/server/whatsapp/credentials";
 import { isWindowOpen } from "@/server/inbox/window";
+// 017 (fork RPM) — inicio del free entry point de 72h para leads de anuncio.
+import { ctwaWindowStart } from "@/server/attribution/ctwa-window";
 import { IG_PREFIX } from "@/server/inbox/identity";
 import {
   getInstagramCredentialsByOrg,
@@ -134,10 +136,13 @@ async function prepareSend(
   // fuera de ventana; Instagram etiqueta y sigue; otro canal podria no tener
   // ventana en absoluto.
   const caps = capabilitiesFor(row.conversation.channel);
+  // 017 (fork RPM): un lead de anuncio CTWA tiene 72h de texto libre desde el
+  // click, además de las 24h del último entrante.
+  const ctwaStart = await ctwaWindowStart(organizationId, row.conversation.id);
   if (
     caps.windowMs !== null &&
     caps.outsideWindow === "template" &&
-    !isWindowOpen(row.conversation.lastInboundAt)
+    !isWindowOpen(row.conversation.lastInboundAt, new Date(), ctwaStart)
   ) {
     throw new SendError(
       "window_closed",

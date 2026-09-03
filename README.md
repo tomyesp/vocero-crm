@@ -84,7 +84,7 @@ cualquier otra conversación.
 
 | Endpoint | Para qué |
 |---|---|
-| `GET /api/bot/context` | Quién es la persona, su etapa, si un humano tomó la conversación y si la ventana de 24 h sigue abierta |
+| `GET /api/bot/context` | Quién es la persona, su etapa, de qué anuncio vino (`ad`), si un humano tomó la conversación y si la ventana sigue abierta (24 h, o 72 h si el lead llegó por un anuncio Click-to-WhatsApp) |
 | `POST /api/bot/messages` | Responder. Sale por el mismo camino que el composer y queda marcado como IA |
 | `GET /api/bot/profile` | El perfil del agente y el knowledge base que editaste en la app |
 | `PUT /api/bot/ficha` | Guardar lo que tu bot descubre del lead (claves libres: cada negocio califica distinto) |
@@ -96,6 +96,29 @@ cualquier otra conversación.
 Los 409 vienen tipados (`ai_paused`, `window_closed`, `sandbox_violation`) para
 que tu bot sepa si callarse, mandar plantilla o rendirse. El guion de pruebas
 está en [`tests/e2e/us-bot-api.md`](tests/e2e/us-bot-api.md).
+
+### Inventario de maquinaria (017 — fork RPM)
+
+Detrás de la bandera `INVENTARIO`: sin ella estos endpoints responden 404 y el
+CRM funciona igual. Son la superficie que convierte al cerebro externo en un
+vendedor de alquileres que **no puede inventar nada**.
+
+| Endpoint | Para qué |
+|---|---|
+| `GET /api/bot/catalogo` | Modelos activos con specs y tarifas. El agente no puede nombrar una máquina que no salga de aquí |
+| `GET /api/bot/disponibilidad` | `?modeloId=&desde=&hasta=&conversationId=` → opciones con `ofertaId`. **Registra la oferta**: solo eso será reservable después |
+| `POST /api/bot/cotizar` | Desglose con el mismo motor que el simulador de la UI. El agente nunca calcula ni redondea un precio |
+| `POST /api/bot/reservas` | `{conversationId, ofertaId}` → reserva **tentativa** (201). Confirmarla es una acción humana |
+| `PATCH /api/bot/reservas` | Mover la tentativa a otra oferta de la misma conversación |
+
+Cuando no hay disponibilidad la respuesta **nunca** es un `false` seco: trae
+`proximaFechaLibre` y `alternativas` reservables — un lead de anuncio que
+recibe un "no hay" se va y no vuelve.
+
+409 tipados propios: `oferta_vencida` (pasaron los 30 min), `oferta_desconocida`
+(el id no es de esta conversación: intento de alucinación), `recien_tomada`
+(otro lead ganó de mano — llegan ofertas frescas en el mismo body) y
+`ai_paused` (un humano tomó la conversación: el agente no reserva).
 
 Agente de referencia: [nea-agent](https://github.com/kevinrivm/nea-agent), MIT.
 
