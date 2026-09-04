@@ -86,37 +86,43 @@ Los dos repos van **uno al lado del otro**: el compose construye el agente
 desde `../nea-agent`.
 
 ```bash
-git clone https://github.com/tomyesp/vocero-crm.git
-git clone https://github.com/tomyesp/nea-agent.git
+git clone -b 017-inventario-maquinaria https://github.com/tomyesp/vocero-crm.git
+git clone -b 017-maquinaria https://github.com/tomyesp/nea-agent.git
 cd vocero-crm
 ```
+
+> **La rama no es opcional.** En los dos forks, `main` sigue siendo el proyecto
+> original: sin catálogo de maquinaria, sin las herramientas de alquiler del
+> agente y sin `docker-compose.rpm.yml`. Si clonás sin `-b`, el primer comando
+> del paso 4 falla con "no such file". Cuando estas ramas se fusionen a `main`,
+> el `-b` sobra.
 
 ## 3. Configurar
 
 ```bash
-cp .env.example .env
-nano .env
+sh deploy/generar-env.sh
 ```
 
-Reemplazá **todos** los `REEMPLAZA_...`. Para los secretos:
+Te pregunta cuatro cosas —los dos dominios, la API key de OpenRouter y tu
+número de WhatsApp— y genera los seis secretos solo. Al terminar te muestra el
+`VERIFY_TOKEN`, que es el que vas a pegar en Meta en el paso 6.
 
-```bash
-openssl rand -hex 32      # META_WEBHOOK_VERIFY_TOKEN, VERIFY_TOKEN, BOT_API_KEY
-openssl rand -hex 24      # POSTGRES_PASSWORD
-openssl rand -base64 32   # BETTER_AUTH_SECRET, ENCRYPTION_KEY
-```
+Se hace con script y no a mano por una razón concreta: **`VERIFY_TOKEN` y
+`META_WEBHOOK_VERIFY_TOKEN` se llaman casi igual y hacen cosas distintas.**
+El primero es el que Meta verifica; el segundo es el segmento secreto de la URL
+interna por la que el agente le pasa el mensaje al CRM, y Meta no lo ve nunca.
+Ponerles el mismo valor no rompe nada al levantar: el error aparece después,
+cuando Meta rechaza el webhook sin explicar por qué.
 
-Los que más se confunden:
+Si preferís hacerlo a mano, `cp .env.example .env` y seguí las guías inline;
+están todas ahí.
 
-- **`META_WEBHOOK_VERIFY_TOKEN` y `VERIFY_TOKEN` son dos cosas distintas.**
-  `VERIFY_TOKEN` es el que Meta te va a pedir y verificar. El otro es el
-  segmento secreto de la URL interna por la que el agente le pasa el mensaje
-  al CRM, y Meta no lo ve nunca. Generá dos valores distintos.
-- **`ALLOWED_WA_IDS`**: poné tu propio número (con código de país, sin `+`:
-  `5493511111111`). Con la lista llena, el agente solo le contesta a esos
-  números. Vaciarla es "salir a producción" y es el paso 7.
-- **`ENCRYPTION_KEY`** cifra el token de WhatsApp en la base. Si la perdés o la
-  cambiás, hay que volver a cargar la conexión de WhatsApp desde la UI.
+Dos cosas para tener presentes:
+
+- **`ALLOWED_WA_IDS`** queda con tu número. Mientras esté ahí, el agente solo
+  te contesta a vos. Vaciarla es "salir a producción", y es el paso 7.
+- **`ENCRYPTION_KEY`** cifra el token de WhatsApp en la base. Si la cambiás,
+  hay que volver a cargar la conexión de WhatsApp desde la UI.
 
 ## 4. Levantar
 
