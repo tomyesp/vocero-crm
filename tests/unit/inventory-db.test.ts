@@ -298,13 +298,34 @@ describe.runIf(dbAvailable)("inventario contra Postgres real", () => {
     );
     const db = getDb();
 
-    // Dos ofertas independientes sobre la MISMA unidad y el MISMO rango:
-    // ninguna validación de aplicación las frena — solo el EXCLUDE.
+    // DOS leads distintos, cada uno con su conversación, peleando la misma
+    // unidad en el mismo rango. Antes esta carrera se montaba sobre una sola
+    // conversación —daba igual, nada miraba de quién era la reserva—, pero
+    // desde 017 Fase 7 (bis) una conversación sostiene UNA tentativa: dos
+    // reservas en el mismo hilo ya no son una carrera sino un doble bloqueo,
+    // que es justo lo que ahora se rechaza. El escenario real que protege el
+    // EXCLUDE siempre fue este: dos personas escribiendo al mismo tiempo.
+    const otherContactId = newId("contact");
+    const otherConvId = newId("conversation");
+    await db.insert(schema.contact).values({
+      id: otherContactId,
+      organizationId: orgId,
+      name: "Lead rival",
+      waIdentity: `rival-${orgId.slice(-8)}`,
+    });
+    await db.insert(schema.conversation).values({
+      id: otherConvId,
+      organizationId: orgId,
+      contactId: otherContactId,
+      channel: "whatsapp",
+    });
+
     const period = { from: day(60), to: day(65) };
+    const convIds = [convId, otherConvId];
     const offerRows = [newId("rentalOffer"), newId("rentalOffer")].map((id, i) => ({
       id,
       organizationId: orgId,
-      conversationId: convId,
+      conversationId: convIds[i]!,
       modelId,
       unitId: unitA,
       period,
@@ -314,11 +335,22 @@ describe.runIf(dbAvailable)("inventario contra Postgres real", () => {
     }));
     await db.insert(schema.rentalOffer).values(offerRows);
 
+    // El hilo principal pudo quedar con una tentativa de un test anterior:
+    // se limpia para que la carrera arranque pareja.
+    await db
+      .delete(schema.rental)
+      .where(
+        and(
+          eq(schema.rental.conversationId, convId),
+          eq(schema.rental.status, "tentativa")
+        )
+      );
+
     const results = await Promise.allSettled(
-      offerRows.map((o) =>
+      offerRows.map((o, i) =>
         createTentativeRental({
           organizationId: orgId,
-          conversationId: convId,
+          conversationId: convIds[i]!,
           offerId: o.id,
           createdBy: "agente",
         })

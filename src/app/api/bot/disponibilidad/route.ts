@@ -122,12 +122,17 @@ export async function GET(req: Request) {
   if (!model || !model.active) return apiError(404, "not_found", "Modelo desconocido");
 
   const period: Period = { from: desde, to: hasta };
+  // Fase 7 (bis) — La tentativa de ESTA conversación no le tapa la máquina a
+  // su propio dueño: si lo hiciera, un lead que corre las fechas de su obra
+  // recibiría "está ocupada" por su propia reserva y mover la tentativa sería
+  // inalcanzable (para mover hace falta una oferta; para ofertar, disponibilidad).
   const free = await findAvailableUnits(
     organizationId,
     modelId,
     period,
     TRANSFER_BUFFER_DAYS,
-    isTest
+    isTest,
+    conversationId
   );
 
   const drafts: OfferDraft[] = [];
@@ -148,7 +153,8 @@ export async function GET(req: Request) {
       modelId,
       period,
       TRANSFER_BUFFER_DAYS,
-      isTest
+      isTest,
+      conversationId
     );
     for (const alt of alts.slice(0, 3)) {
       const altModel = await loadModel(organizationId, alt.modelId);
@@ -189,7 +195,8 @@ export async function GET(req: Request) {
     days,
     TRANSFER_BUFFER_DAYS,
     90,
-    isTest
+    isTest,
+    conversationId
   );
   return Response.json({
     disponible: false,

@@ -13,6 +13,7 @@ const STATUS: Record<RentalError["code"], number> = {
   recien_tomada: 409,
   reserva_inexistente: 404,
   conversacion_inexistente: 404,
+  ya_tiene_reserva: 409,
 };
 
 export function rentalErrorResponse(err: RentalError): Response {
@@ -38,6 +39,25 @@ export function rentalErrorResponse(err: RentalError): Response {
           marca: a.brand,
           tarifaDiariaCents: a.dailyCents,
         })),
+      },
+      { status }
+    );
+  }
+  // 017 Fase 7 (bis) — El agente intentó tomar una SEGUNDA máquina para un
+  // lead que ya tiene una tomada. La reserva que ya existe viaja en el body:
+  // sin ella, el agente sabe que falló pero no qué mover.
+  if (err.code === "ya_tiene_reserva" && err.existing) {
+    const r = err.existing;
+    return Response.json(
+      {
+        error: { code: err.code, message: err.message },
+        reservaExistente: {
+          reservaId: r.id,
+          estado: r.status,
+          desde: r.period.from.toISOString().slice(0, 10),
+          hasta: r.period.to.toISOString().slice(0, 10),
+          montoCotizadoCents: r.quotedAmountCents,
+        },
       },
       { status }
     );

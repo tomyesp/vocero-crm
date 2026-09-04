@@ -10,6 +10,14 @@ import { scoped } from "@/lib/db/tenant";
  * El buffer de traslado se suma al rango CONSULTADO (no al guardado): una
  * máquina que vuelve de otra obra el mismo día no está realmente disponible.
  *
+ * 017 Fase 7 (bis) — `forConversationId` es el lead que pregunta. Su PROPIA
+ * tentativa no le tapa la máquina: si se la contáramos, un lead que corre las
+ * fechas de su obra recibiría "está ocupada" por su propia reserva, y mover la
+ * tentativa —que es lo correcto— sería inalcanzable, porque para moverla hace
+ * falta una oferta y para emitir una oferta hace falta disponibilidad. Para
+ * cualquier OTRO lead esa tentativa sigue tapando, que es lo que protege la
+ * flota.
+ *
  * 017 Fase 7 — `isTest` elige CONTRA QUÉ MUNDO se calcula. Son dos calendarios
  * disjuntos sobre la misma flota: el real (default) y el del Laboratorio. Un
  * mundo de prueba que mirara también las reservas reales sería inservible como
@@ -39,7 +47,8 @@ function buffered(period: Period, bufferDays: number): Period {
 function noActiveOverlap(
   unitIdColumn: typeof schema.machineUnit.id,
   range: Period,
-  isTest: boolean
+  isTest: boolean,
+  forConversationId?: string
 ) {
   return notExists(
     getDb()
@@ -50,6 +59,11 @@ function noActiveOverlap(
           eq(schema.rental.unitId, unitIdColumn),
           sql`${schema.rental.status} in ('tentativa','confirmada','en_curso')`,
           eq(schema.rental.isTest, isTest),
+          // Solo se ignora la TENTATIVA propia. Una reserva ya confirmada del
+          // mismo lead sí tapa: esa es otra obra suya, no la que está moviendo.
+          forConversationId
+            ? sql`not (${schema.rental.status} = 'tentativa' and ${schema.rental.conversationId} = ${forConversationId})`
+            : undefined,
           sql`${schema.rental.period} && tstzrange(${range.from.toISOString()}, ${range.to.toISOString()})`
         )
       )
@@ -66,7 +80,8 @@ export async function findAvailableUnits(
   modelId: string,
   period: Period,
   bufferDays: number = TRANSFER_BUFFER_DAYS,
-  isTest: boolean = false
+  isTest: boolean = false,
+  forConversationId?: string
 ): Promise<(typeof schema.machineUnit.$inferSelect)[]> {
   const db = getDb();
   const range = buffered(period, bufferDays);
@@ -79,7 +94,7 @@ export async function findAvailableUnits(
         organizationId,
         eq(schema.machineUnit.modelId, modelId),
         eq(schema.machineUnit.status, "operativa"),
-        noActiveOverlap(schema.machineUnit.id, range, isTest)
+        noActiveOverlap(schema.machineUnit.id, range, isTest, forConversationId)
       )
     )
     .orderBy(asc(schema.machineUnit.usageHours));
@@ -98,7 +113,8 @@ export async function nextFreeDate(
   durationDays: number,
   bufferDays: number = TRANSFER_BUFFER_DAYS,
   horizonDays: number = 90,
-  isTest: boolean = false
+  isTest: boolean = false,
+  forConversationId?: string
 ): Promise<Date | null> {
   const db = getDb();
   const units = await db
@@ -122,7 +138,10 @@ export async function nextFreeDate(
         schema.rental.organizationId,
         organizationId,
         sql`${schema.rental.status} in ('tentativa','confirmada','en_curso')`,
-        eq(schema.rental.isTest, isTest)
+        eq(schema.rental.isTest, isTest),
+        forConversationId
+          ? sql`not (${schema.rental.status} = 'tentativa' and ${schema.rental.conversationId} = ${forConversationId})`
+          : undefined
       )
     );
   const byUnit = new Map<string, Period[]>();
@@ -166,7 +185,8 @@ export async function findAlternatives(
   excludeModelId: string,
   period: Period,
   bufferDays: number = TRANSFER_BUFFER_DAYS,
-  isTest: boolean = false
+  isTest: boolean = false,
+  forConversationId?: string
 ): Promise<Alternative[]> {
   const db = getDb();
   const range = buffered(period, bufferDays);
@@ -191,7 +211,7 @@ export async function findAlternatives(
         eq(schema.machineModel.active, true),
         ne(schema.machineModel.id, excludeModelId),
         eq(schema.machineUnit.status, "operativa"),
-        noActiveOverlap(schema.machineUnit.id, range, isTest)
+        noActiveOverlap(schema.machineUnit.id, range, isTest, forConversationId)
       )
     )
     .orderBy(asc(schema.machineUnit.usageHours));

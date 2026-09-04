@@ -47,7 +47,10 @@ export class RentalError extends Error {
     | "oferta_vencida"
     | "recien_tomada"
     | "reserva_inexistente"
-    | "conversacion_inexistente";
+    | "conversacion_inexistente"
+    | "ya_tiene_reserva";
+  /** `ya_tiene_reserva`: la tentativa viva de esta conversación. */
+  existing?: typeof schema.rental.$inferSelect;
   /** `recien_tomada`: ofertas frescas de la MISMA máquina, reservables ya. */
   offers?: IssuedOffer[];
   /** `recien_tomada`: otras máquinas de la categoría (info, no reservables). */
@@ -132,6 +135,27 @@ async function buildRaceRecovery(
   return { offers: [], alternatives: out };
 }
 
+/** La tentativa viva de una conversación (a lo sumo una, por diseño). */
+export async function findActiveTentative(
+  organizationId: string,
+  conversationId: string
+): Promise<typeof schema.rental.$inferSelect | null> {
+  const rows = await getDb()
+    .select()
+    .from(schema.rental)
+    .where(
+      scoped(
+        schema.rental.organizationId,
+        organizationId,
+        eq(schema.rental.conversationId, conversationId),
+        eq(schema.rental.status, "tentativa")
+      )
+    )
+    .orderBy(desc(schema.rental.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 async function loadConversation(organizationId: string, conversationId: string) {
   const db = getDb();
   const rows = await db
@@ -165,6 +189,27 @@ export async function createTentativeRental(
   const conversation = await loadConversation(organizationId, conversationId);
   if (!conversation) {
     throw new RentalError("conversacion_inexistente", "La conversación no existe");
+  }
+
+  // Una conversación sostiene UNA tentativa. La regla ya estaba escrita en la
+  // descripción de `cambiar_reserva_tentativa` ("si creás otra, el negocio
+  // queda con dos máquinas bloqueadas para el mismo cliente"), pero pedida al
+  // modelo. Acá se vuelve imposible de desobedecer, igual que el contador de
+  // hostilidad o la validación de ofertas: lo que tiene que valer siempre no
+  // se le pide al LLM.
+  //
+  // Sin esto, además, el segundo intento moría con `recien_tomada` — "otra
+  // reserva ganó esa unidad" — que es directamente falso cuando el que la
+  // tiene es el mismo lead, y mandaba al agente a buscar alternativas que no
+  // hacían falta.
+  const existing = await findActiveTentative(organizationId, conversationId);
+  if (existing) {
+    const err = new RentalError(
+      "ya_tiene_reserva",
+      "Esta conversación ya tiene una reserva tentativa: hay que moverla, no crear otra"
+    );
+    err.existing = existing;
+    throw err;
   }
 
   const validation = await validateOffer(organizationId, conversationId, offerId);
