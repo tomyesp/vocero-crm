@@ -8,6 +8,7 @@ import {
   findAlternatives,
   findAvailableUnits,
   nextFreeDate,
+  TRANSFER_BUFFER_DAYS,
   type Period,
 } from "@/server/inventory/availability";
 import { replaceRentalOffers, type OfferDraft } from "@/server/inventory/offers";
@@ -108,17 +109,26 @@ export async function GET(req: Request) {
 
   const db = getDb();
   const convs = await db
-    .select({ id: schema.conversation.id })
+    .select({ id: schema.conversation.id, isTest: schema.conversation.isTest })
     .from(schema.conversation)
     .where(scoped(schema.conversation.organizationId, organizationId, eq(schema.conversation.id, conversationId)))
     .limit(1);
   if (!convs[0]) return apiError(404, "not_found", "Conversación no encontrada");
+  // Fase 7 — Contra qué calendario se responde. Una conversación del
+  // Laboratorio ve solo reservas de prueba; una real, solo reales.
+  const isTest = convs[0].isTest;
 
   const model = await loadModel(organizationId, modelId);
   if (!model || !model.active) return apiError(404, "not_found", "Modelo desconocido");
 
   const period: Period = { from: desde, to: hasta };
-  const free = await findAvailableUnits(organizationId, modelId, period);
+  const free = await findAvailableUnits(
+    organizationId,
+    modelId,
+    period,
+    TRANSFER_BUFFER_DAYS,
+    isTest
+  );
 
   const drafts: OfferDraft[] = [];
   if (free.length > 0) {
@@ -132,7 +142,14 @@ export async function GET(req: Request) {
   // modelo pedido está libre, no hacen falta; si no, son la salida).
   const alternativeDrafts: OfferDraft[] = [];
   if (free.length === 0) {
-    const alts = await findAlternatives(organizationId, model.categoryId, modelId, period);
+    const alts = await findAlternatives(
+      organizationId,
+      model.categoryId,
+      modelId,
+      period,
+      TRANSFER_BUFFER_DAYS,
+      isTest
+    );
     for (const alt of alts.slice(0, 3)) {
       const altModel = await loadModel(organizationId, alt.modelId);
       if (!altModel) continue;
@@ -165,7 +182,15 @@ export async function GET(req: Request) {
     });
   }
 
-  const proxima = await nextFreeDate(organizationId, modelId, desde, days);
+  const proxima = await nextFreeDate(
+    organizationId,
+    modelId,
+    desde,
+    days,
+    TRANSFER_BUFFER_DAYS,
+    90,
+    isTest
+  );
   return Response.json({
     disponible: false,
     // `sin_unidades` = ni siquiera hay fecha futura (flota en baja/mantenimiento).

@@ -172,7 +172,13 @@ export async function listRentals(
           ? inArray(schema.rental.status, filters.status)
           : undefined,
         filters.unitId ? eq(schema.rental.unitId, filters.unitId) : undefined,
-        filters.contactId ? eq(schema.rental.contactId, filters.contactId) : undefined
+        filters.contactId ? eq(schema.rental.contactId, filters.contactId) : undefined,
+        // 017 Fase 7 — Las reservas del Laboratorio NO salen en la pantalla de
+        // operación. Son de un calendario paralelo (ver availability.ts) y
+        // mezclarlas con las reales convierte /reservas en un lugar donde hay
+        // que adivinar cuál es de verdad. El Lab muestra las suyas en su
+        // propio reporte.
+        eq(schema.rental.isTest, false)
       )
     )
     .orderBy(desc(schema.rental.createdAt));

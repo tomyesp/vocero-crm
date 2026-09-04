@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { SendError, sendText } from "@/server/inbox/send";
+import { persistSandboxOutbound } from "@/server/lab/sandbox";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,15 @@ const bodySchema = z.object({
  * que el mensaje queda en el hilo marcado como IA, respeta la ventana de 24 h
  * y hereda el guard de sandbox del Laboratorio.
  *
- * 409 tipados: ai_paused (un humano tomó la conversación) · window_closed ·
- * sandbox_violation.
+ * 409 tipados: ai_paused (un humano tomó la conversación) · window_closed.
+ *
+ * 017 Fase 7 — Conversación del Laboratorio: la respuesta se PERSISTE en el
+ * hilo y no sale a Meta. Antes esto era un 409 sandbox_violation, lo que
+ * dejaba al agente real sin forma de contestar en el banco de pruebas: el
+ * Laboratorio solo podía evaluar al agente in-process, que en esta instancia
+ * ni siquiera es el que atiende. La aserción dura sigue viva un piso más
+ * abajo (`sendText` lanza), así que a la API de WhatsApp no llega jamás una
+ * conversación de prueba.
  */
 export async function POST(req: Request) {
   const denied = requireBotKey(req);
@@ -41,6 +49,7 @@ export async function POST(req: Request) {
     .select({
       aiEnabled: schema.conversation.aiEnabled,
       handoffAt: schema.conversation.handoffAt,
+      isTest: schema.conversation.isTest,
     })
     .from(schema.conversation)
     .where(
@@ -54,6 +63,17 @@ export async function POST(req: Request) {
   if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
   if (!conv.aiEnabled || conv.handoffAt) {
     return apiError(409, "ai_paused", "La IA está en pausa en esta conversación");
+  }
+
+  // El gate de handoff corre ANTES: una conversación simulada tomada por un
+  // humano también silencia al agente — eso es parte de lo que se evalúa.
+  if (conv.isTest) {
+    const result = await persistSandboxOutbound({
+      conversationId: body.data.conversationId,
+      organizationId,
+      text: body.data.text,
+    });
+    return Response.json({ messageId: result.messageId, sandbox: true });
   }
 
   try {

@@ -27,7 +27,9 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | El cerebro/proveedor LLM | `src/lib/ai/` (adaptador OpenRouter-compatible, `chatJson<T>`) |
 | El comportamiento/prompt del agente | `src/server/ai/prompts.ts` |
 | Las acciones que puede tomar el agente | `src/server/ai/actions.ts` + ejecución en `src/server/ai/pipeline.ts` |
-| Las personas o el juez del Laboratorio | `src/server/lab/personas.ts` · `src/server/lab/judge.ts` |
+| Las personas o el juez del Laboratorio | `src/server/lab/personas.ts` · `src/server/lab/judge.ts` · rúbrica en `src/server/ai/prompts.ts` |
+| A QUIÉN evalúa el Laboratorio | `NEA_BASE_URL` → al cerebro externo (`src/server/lab/nea.ts`); sin ella, al agente in-process |
+| El mundo simulado de una corrida | `src/server/lab/fixtures.ts` (calendario `is_test`, disjunto del real) |
 | El canal WhatsApp (Graph API) | `src/lib/meta/` (cliente único) + `src/server/whatsapp/` |
 | Campos/tablas | `src/lib/db/schema.ts` → `pnpm db:generate` → migración nueva en `drizzle/` |
 | La ingesta/envío de mensajes | `src/server/inbox/` (ingest idempotente, send con guard de sandbox, ventana 24h) |
@@ -74,7 +76,22 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   monotónicos; seeds y migraciones re-ejecutables.
 - **Sandbox del Laboratorio**: las conversaciones `is_test` JAMÁS tocan la API
   real — el sender lanza excepción (no lo "arregles": es un guardrail). Lo
-  mismo vale para la agenda: una cita de prueba nunca llega a un conector.
+  mismo vale para la agenda: una cita de prueba nunca llega a un conector. Los
+  caminos que SÍ deben responder en el Lab (el pipeline in-process y
+  `POST /api/bot/messages`) persisten la respuesta con
+  `server/lab/sandbox.ts` en vez de enviarla; `sendText` sigue lanzando.
+- **El score del Laboratorio es orientativo, no una métrica (017 Fase 7)**: lo
+  pone un LLM y se mueve entre corridas del MISMO código — medido: 44 y 70 en
+  dos corridas seguidas sin tocar el agente. Lo que se lee son los hallazgos
+  con su transcript y su traza de herramientas. No persigas el número, y no
+  uses el juez chico: `OPENROUTER_JUDGE_MODEL` con un modelo de conversación
+  barato marcaba como falla la frase que la propia herramienta le dicta al
+  agente.
+- **Dos calendarios (017 Fase 7)**: `rental.is_test` no es una marca decorativa
+  — separa el inventario real del que ve el Laboratorio, en las DOS
+  direcciones. Una corrida no puede hacer que un lead real escuche "no hay", y
+  el calendario real no puede mover el resultado de una corrida. Toda consulta
+  de disponibilidad elige mundo explícitamente.
 - **Módulos opcionales (015, 016)**: lo que no usa toda instancia va detrás de una
   bandera de despliegue, apagado por defecto, con su superficie en 404 y la
   migración aplicada igual. Nunca en una rama aparte

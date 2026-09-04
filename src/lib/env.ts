@@ -56,6 +56,10 @@ const envSchema = z.object({
   // API key de un cerebro externo que conduzca la conversación por /api/bot/*.
   // Sin ella, toda esa superficie responde 401.
   BOT_API_KEY: z.string().optional(),
+  // 017 Fase 7: base del cerebro externo (Nea), para que el Laboratorio evalúe
+  // al agente que DE VERDAD atiende. Sin ella el Lab corre contra el agente
+  // in-process, como en el upstream. Ej.: NEA_BASE_URL=http://localhost:8000
+  NEA_BASE_URL: z.string().url().optional(),
   // 008: volumen local de adjuntos (constitución II: sin S3/R2).
   MEDIA_DIR: z.string().default("./.dev-media"),
   NODE_ENV: z.string().default("development"),

@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { apiError, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { PERSONA_LABELS } from "@/server/lab/personas";
+import { PERSONA_LABELS, PERSONA_RIESGOS } from "@/server/lab/personas";
 
 export const dynamic = "force-dynamic";
 
@@ -44,10 +44,15 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
       id: c.id,
       persona: c.persona,
       personaLabel: PERSONA_LABELS[c.persona] ?? c.persona,
+      // Qué falla busca provocar la persona: sin esto, el reporte muestra un
+      // veredicto sin decir contra qué se lo midió.
+      riesgo: PERSONA_RIESGOS[c.persona] ?? null,
       status: c.status,
       veredicto: c.veredicto,
       hallazgos: c.hallazgos ?? [],
       transcript: c.transcript ?? [],
+      // 017 Fase 7 — herramientas que llamó el agente, en orden.
+      toolTrace: c.toolTrace ?? [],
     })),
   });
 });

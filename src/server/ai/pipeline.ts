@@ -1,6 +1,5 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
 import { getEnv, isAiConfigured } from "@/lib/env";
@@ -17,6 +16,8 @@ import {
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
+// 017 Fase 7 — entrega en sandbox compartida con el camino de Nea.
+import { persistSandboxOutbound } from "@/server/lab/sandbox";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 
 /**
@@ -281,22 +282,13 @@ async function persistTestOutbound(
   conversation: Conversation,
   text: string
 ): Promise<void> {
-  const db = getDb();
-  await db.insert(schema.message).values({
-    id: newId("message"),
-    organizationId: conversation.organizationId,
+  // 017 Fase 7 — la implementación se mudó a server/lab/sandbox.ts: ahora la
+  // comparte con el camino de Nea (POST /api/bot/messages).
+  await persistSandboxOutbound({
     conversationId: conversation.id,
-    direction: "out",
-    type: "text",
+    organizationId: conversation.organizationId,
     text,
-    status: "sent",
-    aiGenerated: true,
-    origin: "ai",
   });
-  await db
-    .update(schema.conversation)
-    .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-    .where(eq(schema.conversation.id, conversation.id));
 }
 
 export async function applyHandoff(

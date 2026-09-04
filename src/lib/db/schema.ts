@@ -835,6 +835,14 @@ export const agentTestCase = pgTable(
       onDelete: "set null",
     }),
     transcript: jsonb("transcript"),
+    /**
+     * 017 (fork RPM) — Qué herramientas llamó el agente en el caso, en orden.
+     * Sin esto el juez solo ve el texto, y las fallas que de verdad importan
+     * en alquiler son INVISIBLES en el texto: un precio correcto puede venir
+     * de `cotizar` o de la imaginación del modelo, y se leen igual. La traza
+     * es lo que vuelve verificable la rúbrica.
+     */
+    toolTrace: jsonb("tool_trace"),
     veredicto: text("veredicto", { enum: ["verde", "amarillo", "rojo"] }),
     hallazgos: jsonb("hallazgos"),
     status: text("status", {

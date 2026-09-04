@@ -3,7 +3,8 @@ import { apiError, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAiConfigured } from "@/lib/env";
-import { RunConflictError, startRun } from "@/server/lab/runner";
+import { labTarget, RunConflictError, startRun } from "@/server/lab/runner";
+import { PERSONAS } from "@/server/lab/personas";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,16 @@ export const GET = withAuth(async (session) => {
           : null,
     };
   });
-  return Response.json({ runs: withDelta, aiConfigured: isAiConfigured() });
+  // 017 Fase 7 — a quién evalúa esta instancia y con cuántas personas. La UI
+  // lo dice de frente: un score no significa lo mismo si midió a Nea (el que
+  // atiende) que al agente in-process (que acá está apagado).
+  const target = labTarget();
+  return Response.json({
+    runs: withDelta,
+    aiConfigured: isAiConfigured(),
+    target: target.mode,
+    personaCount: PERSONAS.length,
+  });
 });
 
 export const POST = withAuth(async (session) => {

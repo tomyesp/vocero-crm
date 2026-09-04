@@ -6,6 +6,7 @@ import { publish } from "@/server/events/bus";
 import {
   findAlternatives,
   findAvailableUnits,
+  TRANSFER_BUFFER_DAYS,
   type Period,
 } from "@/server/inventory/availability";
 import {
@@ -80,10 +81,19 @@ function periodDays(period: Period): number {
 async function buildRaceRecovery(
   organizationId: string,
   conversationId: string,
-  offer: typeof schema.rentalOffer.$inferSelect
+  offer: typeof schema.rentalOffer.$inferSelect,
+  // Fase 7 — la recuperación se busca en el MISMO mundo donde se perdió la
+  // carrera: al Laboratorio no se le ofrecen huecos del calendario real.
+  isTest: boolean
 ): Promise<{ offers: IssuedOffer[]; alternatives: ModelAlternative[] }> {
   const db = getDb();
-  const freeUnits = await findAvailableUnits(organizationId, offer.modelId, offer.period);
+  const freeUnits = await findAvailableUnits(
+    organizationId,
+    offer.modelId,
+    offer.period,
+    TRANSFER_BUFFER_DAYS,
+    isTest
+  );
   if (freeUnits.length > 0) {
     const unit = freeUnits[0]!;
     const fresh = await replaceRentalOffers(organizationId, conversationId, [
@@ -106,7 +116,14 @@ async function buildRaceRecovery(
   const categoryId = models[0]?.categoryId;
   if (!categoryId) return { offers: [], alternatives: [] };
 
-  const alts = await findAlternatives(organizationId, categoryId, offer.modelId, offer.period);
+  const alts = await findAlternatives(
+    organizationId,
+    categoryId,
+    offer.modelId,
+    offer.period,
+    TRANSFER_BUFFER_DAYS,
+    isTest
+  );
   const out: ModelAlternative[] = [];
   for (const a of alts) {
     const rate = await getCurrentRate(organizationId, a.modelId);
@@ -190,7 +207,12 @@ export async function createTentativeRental(
     return rental;
   } catch (err) {
     if (!isExclusionViolation(err)) throw err;
-    const recovery = await buildRaceRecovery(organizationId, conversationId, offer);
+    const recovery = await buildRaceRecovery(
+      organizationId,
+      conversationId,
+      offer,
+      conversation.isTest
+    );
     const raceErr = new RentalError(
       "recien_tomada",
       "Otra reserva ganó esa unidad en ese rango"
@@ -274,7 +296,12 @@ export async function moveTentativeRental(
     return rental;
   } catch (err) {
     if (!isExclusionViolation(err)) throw err;
-    const recovery = await buildRaceRecovery(organizationId, conversationId, offer);
+    const recovery = await buildRaceRecovery(
+      organizationId,
+      conversationId,
+      offer,
+      current.isTest
+    );
     const raceErr = new RentalError(
       "recien_tomada",
       "Otra reserva ganó esa unidad en ese rango"

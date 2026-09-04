@@ -11,6 +11,7 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import { useEvents } from "@/components/use-events";
@@ -31,32 +32,59 @@ type Run = {
   delta: number | null;
 };
 
+type HallazgoTipo =
+  | "alucinacion"
+  | "fuera_de_kb"
+  | "debio_escalar"
+  | "tono"
+  | "precio_sin_cotizar"
+  | "disponibilidad_inventada"
+  | "maquina_inexistente"
+  | "reserva_mal_manejada"
+  | "confirmo_de_mas";
+
 type Hallazgo = {
-  tipo: "alucinacion" | "fuera_de_kb" | "debio_escalar" | "tono";
+  tipo: HallazgoTipo;
   evidencia: string;
   sugerencia?: { pregunta: string; respuesta: string };
+};
+
+/** Una llamada a herramienta del agente, tal como la vio Nea. */
+type ToolCall = {
+  herramienta: string;
+  argumentos: Record<string, unknown>;
+  resultado: unknown;
 };
 
 type Case = {
   id: string;
   persona: string;
   personaLabel: string;
+  riesgo: string | null;
   status: string;
   veredicto: "verde" | "amarillo" | "rojo" | null;
   hallazgos: Hallazgo[];
   transcript: { role: "cliente" | "agente"; text: string }[];
+  toolTrace: ToolCall[];
 };
 
-const TIPO_LABELS: Record<Hallazgo["tipo"], string> = {
+const TIPO_LABELS: Record<HallazgoTipo, string> = {
   alucinacion: "Alucinación",
   fuera_de_kb: "Fuera del conocimiento",
   debio_escalar: "Debió escalar",
   tono: "Tono",
+  precio_sin_cotizar: "Precio sin cotizar",
+  disponibilidad_inventada: "Disponibilidad inventada",
+  maquina_inexistente: "Máquina que no existe",
+  reserva_mal_manejada: "Reserva mal manejada",
+  confirmo_de_mas: "Confirmó de más",
 };
 
 export function LabClient() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [aiConfigured, setAiConfigured] = useState(true);
+  const [target, setTarget] = useState<"nea" | "in_process">("in_process");
+  const [personaCount, setPersonaCount] = useState(8);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ run: Run; cases: Case[] } | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -66,9 +94,16 @@ export function LabClient() {
   const refetchRuns = useCallback(async () => {
     const res = await fetch("/api/lab/runs").catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as { runs: Run[]; aiConfigured: boolean };
+    const data = (await res.json()) as {
+      runs: Run[];
+      aiConfigured: boolean;
+      target: "nea" | "in_process";
+      personaCount: number;
+    };
     setRuns(data.runs);
     setAiConfigured(data.aiConfigured);
+    setTarget(data.target);
+    setPersonaCount(data.personaCount);
     if (!selectedRunId && data.runs[0]) setSelectedRunId(data.runs[0].id);
   }, [selectedRunId]);
 
@@ -112,14 +147,20 @@ export function LabClient() {
     }
     const data = (await res.json()) as { runId: string };
     setSelectedRunId(data.runId);
-    setProgress({ done: 0, total: 6 });
+    setProgress({ done: 0, total: personaCount });
     void refetchRuns();
   }
 
   if (!aiConfigured) {
     return (
       <div className="flex h-full flex-col">
-        <Header running={false} launching={false} onLaunch={() => {}} disabled />
+        <Header
+          running={false}
+          launching={false}
+          onLaunch={() => {}}
+          disabled
+          target={target}
+        />
         <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
           <p className="font-medium">
@@ -144,6 +185,7 @@ export function LabClient() {
         launching={launching}
         onLaunch={() => void launch()}
         disabled={false}
+        target={target}
       />
       {error && <p className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
 
@@ -175,7 +217,7 @@ export function LabClient() {
         ) : (
           <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
             {runs.length === 0
-              ? "Corre tu primera evaluación: 6 clientes simulados conversarán con tu agente y un juez calificará cada conversación."
+              ? `Corre tu primera evaluación: ${personaCount} clientes simulados conversarán con tu agente y un juez calificará cada conversación.`
               : "Elige una corrida del historial."}
           </div>
         )}
@@ -189,11 +231,13 @@ function Header({
   launching,
   onLaunch,
   disabled,
+  target,
 }: {
   running: boolean;
   launching: boolean;
   onLaunch: () => void;
   disabled: boolean;
+  target: "nea" | "in_process";
 }) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
@@ -202,7 +246,10 @@ function Header({
           <FlaskConical className="h-4 w-4 text-primary" /> Laboratorio
         </h2>
         <p className="text-xs text-muted-foreground">
-          Sandbox interno — no envía mensajes reales
+          Sandbox interno — no envía mensajes reales ·{" "}
+          {target === "nea"
+            ? "evalúa al agente que atiende (Nea)"
+            : "evalúa al agente interno del CRM"}
         </p>
       </div>
       <Button onClick={onLaunch} disabled={disabled || running || launching}>
@@ -257,7 +304,7 @@ function HistoryList({
             )}
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            {new Date(run.startedAt).toLocaleString("es-MX", {
+            {new Date(run.startedAt).toLocaleString("es-AR", {
               day: "numeric",
               month: "short",
               hour: "2-digit",
@@ -319,6 +366,18 @@ function Report({
                 veredicto (el juez no respondió válido); excluidos del score.
               </p>
             )}
+            {/*
+              017 Fase 7 — El score lo pone un LLM y varía entre corridas del
+              MISMO código (medido: 44 y 70 en dos corridas seguidas sin tocar
+              el agente). Sirve para mirar de reojo; lo que se lee son los
+              hallazgos y el transcript. Decirlo acá evita que alguien celebre
+              o entre en pánico por un movimiento que es ruido.
+            */}
+            <p className="mt-3 text-xs text-muted-foreground">
+              El score es orientativo: lo pone un modelo y se mueve entre
+              corridas aunque el agente no cambie. Lo que vale es abrir cada
+              caso y leer los hallazgos con su transcript.
+            </p>
           </CardContent>
         )}
       </Card>
@@ -351,7 +410,7 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
           className="flex w-full items-center justify-between"
           onClick={() => setOpen(!open)}
         >
-          <span className="flex items-center gap-2 text-sm font-semibold">
+          <span className="flex items-center gap-2 text-left text-sm font-semibold">
             {icon}
             {c.personaLabel}
             {c.status === "judge_failed" && (
@@ -366,6 +425,12 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
       </CardHeader>
       {open && (
         <CardContent className="space-y-3">
+          {c.riesgo && (
+            <p className="rounded-md border bg-background/40 p-3 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Qué se prueba:</span>{" "}
+              {c.riesgo}
+            </p>
+          )}
           {c.hallazgos.map((h, i) => (
             <HallazgoCard key={i} hallazgo={h} caseId={c.id} index={i} onApplied={onApplied} />
           ))}
@@ -388,9 +453,52 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
               ))}
             </div>
           </div>
+          {c.toolTrace.length > 0 && <ToolTrace calls={c.toolTrace} />}
         </CardContent>
       )}
     </Card>
+  );
+}
+
+/**
+ * De dónde salieron los datos que dijo el agente. Es lo que separa "dijo un
+ * precio correcto" de "consultó el precio": en el texto se leen igual.
+ */
+function ToolTrace({ calls }: { calls: ToolCall[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-md border bg-background/40 p-3">
+      <button
+        className="flex w-full items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="flex items-center gap-1.5">
+          <Wrench className="h-3.5 w-3.5" />
+          Herramientas ({calls.length})
+        </span>
+        {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {!open && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {calls.map((t) => t.herramienta).join(" → ")}
+        </p>
+      )}
+      {open && (
+        <ol className="mt-2 space-y-2 text-xs">
+          {calls.map((t, i) => (
+            <li key={i} className="rounded border bg-card p-2">
+              <p className="font-mono font-medium text-primary">{t.herramienta}</p>
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+                {JSON.stringify(t.argumentos)}
+              </pre>
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+                → {JSON.stringify(t.resultado)}
+              </pre>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 

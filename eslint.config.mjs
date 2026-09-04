@@ -14,6 +14,8 @@ const config = [
       ".tmp-seed-demo.mjs",
       // 017 — bundle temporal del seed de inventario, mismo caso que el demo.
       ".tmp-seed-inventory.mjs",
+      // 017 Fase 7 — bundle temporal de `pnpm lab:run`, ídem.
+      ".tmp-lab-run.mjs",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
