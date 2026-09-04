@@ -1,0 +1,12 @@
+# 017 Fase 8 — Los scripts que corren DENTRO de un contenedor Linux van con
+# finales de línea LF sí o sí.
+#
+# Con `core.autocrlf=true` (el default de Git en Windows) un .sh se registra
+# con CRLF al hacer checkout, se monta así en el contenedor y `sh` falla con
+# "bad interpreter: no such file or directory" — un error que no menciona en
+# ningún lado los finales de línea y se lleva media tarde.
+*.sh text eol=lf
+Caddyfile text eol=lf
+Caddyfile.* text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

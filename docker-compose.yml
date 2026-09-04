@@ -1,6 +1,10 @@
 # ============================================================
 # Vocero CRM — Ruta B: app + Postgres + Caddy (HTTPS automático)
 # Uso:  cp .env.example .env  →  rellenar  →  docker compose up -d --build
+#
+# Este levanta el CRM SOLO. Para el stack de RPM (CRM + agente Nea + las dos
+# bases + respaldos) usá `docker-compose.rpm.yml`, que es lo que corre en
+# producción — guía en docs/deploy-rpm.md.
 # ============================================================
 services:
   app:

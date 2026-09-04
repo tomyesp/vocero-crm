@@ -1,0 +1,191 @@
+# =============================================================================
+# RPM Construcciones — stack completo en UN servidor (017 Fase 8)
+#
+#   Meta → nea (webhook) → relay → app (CRM) → Meta
+#                       ↘ tools /api/bot/* ↗
+#
+# Cinco piezas: Caddy (TLS), el CRM, el agente, un Postgres con DOS bases y un
+# job de backups. El `docker-compose.yml` de al lado sigue siendo el de Vocero
+# a secas (solo CRM) — este es el de esta instalación.
+#
+# Requiere los DOS repos clonados uno al lado del otro:
+#   .../RPM CRM Whatsapp Agent/vocero-crm   ← acá se corre
+#   .../RPM CRM Whatsapp Agent/nea-agent
+#
+# Uso:  cp .env.example .env  →  rellenar  →
+#       docker compose -f docker-compose.rpm.yml up -d --build
+#
+# Guía completa: docs/deploy-rpm.md
+# =============================================================================
+name: rpm
+
+services:
+  # --------------------------------------------------------------- Postgres --
+  # UN servidor, DOS bases: `vocero` y `nea`. Separadas porque son dos
+  # servicios que no comparten tablas (el agente lleva su propia memoria);
+  # en el mismo motor porque es un solo VPS y no hay razón para pagar dos
+  # veces la RAM ni mantener dos backups.
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+      POSTGRES_DB: vocero
+    volumes:
+      - rpm_pg:/var/lib/postgresql/data
+      # Crea la base `nea` en el PRIMER arranque (volumen vacío). Si el
+      # volumen ya existe, este script no corre — es el comportamiento
+      # estándar de la imagen, y por eso `nea` no se recrea sola si alguien
+      # la borra a mano.
+      - ./deploy/init-nea-db.sh:/docker-entrypoint-initdb.d/10-init-nea-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vocero"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # -------------------------------------------------------------- CRM (app) --
+  app:
+    build:
+      context: .
+      args:
+        SOURCE_COMMIT: ${SOURCE_COMMIT:-}
+    restart: unless-stopped
+    environment:
+      APP_BASE_URL: ${APP_BASE_URL:?falta APP_BASE_URL}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/vocero
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?falta BETTER_AUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?falta ENCRYPTION_KEY}
+      # Segmento secreto de la URL del webhook del CRM. NO es el token que
+      # Meta verifica (ese es VERIFY_TOKEN, y lo tiene Nea): a este endpoint
+      # solo le habla Nea, por la red interna.
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:?falta META_WEBHOOK_VERIFY_TOKEN}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
+      OPENROUTER_API_TOKEN: ${OPENROUTER_API_TOKEN:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_JUDGE_MODEL: ${OPENROUTER_JUDGE_MODEL:-}
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-}
+      AGENT_COALESCE_MS: ${AGENT_COALESCE_MS:-6000}
+      # Banderas de esta instalación (ADR-001: apagadas, la superficie no existe).
+      INVENTARIO: ${INVENTARIO:-on}
+      ATRIBUCION: ${ATRIBUCION:-on}
+      # Llave del bot gateway: con ella Nea conduce la conversación sin que el
+      # token de WhatsApp salga nunca del CRM.
+      BOT_API_KEY: ${BOT_API_KEY:?falta BOT_API_KEY}
+      # 017 Fase 7 — el Laboratorio evalúa al agente que de verdad atiende.
+      # Por la red interna: nunca sale a internet.
+      NEA_BASE_URL: http://nea:8000
+      MEDIA_DIR: /data/media
+    volumes:
+      - rpm_media:/data/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # el HEALTHCHECK vive en el Dockerfile (/api/health)
+
+  # ------------------------------------------------------------ Agente (Nea) --
+  nea:
+    build:
+      context: ../nea-agent
+    restart: unless-stopped
+    environment:
+      # Token que Meta verifica al dar de alta el webhook. Este SÍ lo ve Meta.
+      VERIFY_TOKEN: ${VERIFY_TOKEN:?falta VERIFY_TOKEN}
+      # Mismo app secret que el CRM: Nea valida la firma al recibir y el CRM
+      # la vuelve a validar sobre el body crudo que Nea le relevó intacto.
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      # Al CRM se le habla por la red interna de Docker, NO por el dominio
+      # público: así el bot gateway y el webhook del CRM no quedan expuestos.
+      CRM_BASE_URL: http://app:3000
+      CRM_WEBHOOK_URL: http://app:3000/api/webhooks/wa/${META_WEBHOOK_VERIFY_TOKEN}
+      CRM_BOT_API_KEY: ${BOT_API_KEY}
+      AGENT_NAME: ${AGENT_NAME:-Nea}
+      AGENT_TIMEZONE: ${AGENT_TIMEZONE:-America/Argentina/Buenos_Aires}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?falta OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-openai/gpt-4o-mini}
+      AUDIO_MODEL: ${AUDIO_MODEL:-google/gemini-2.5-flash-lite}
+      HISTORY_WINDOW: ${HISTORY_WINDOW:-10}
+      # VACÍA = atiende a todos los leads. Con valor, solo a esas identidades.
+      # Salir a producción es una decisión explícita: ver docs/deploy-rpm.md.
+      ALLOWED_WA_IDS: ${ALLOWED_WA_IDS:-}
+      TESTER_WA_IDS: ${TESTER_WA_IDS:-}
+      COALESCE_SECONDS: ${COALESCE_SECONDS:-4}
+      TYPING_DELAY_SECONDS: ${TYPING_DELAY_SECONDS:-0.5}
+      FOLLOWUP_HOURS: ${FOLLOWUP_HOURS:-4}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/nea
+      PORT: 8000
+      CAPTURE_PAYLOADS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Nea sondea el inventario del CRM al arrancar: si el CRM todavía no
+      # responde, arranca creyendo que no hay catálogo y no ofrece máquinas
+      # hasta el próximo reinicio.
+      app:
+        condition: service_healthy
+
+  # ------------------------------------------------------------------ Caddy --
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?falta DOMAIN}
+      BOT_DOMAIN: ${BOT_DOMAIN:?falta BOT_DOMAIN}
+    volumes:
+      - ./Caddyfile.rpm:/etc/caddy/Caddyfile:ro
+      - rpm_caddy_data:/data
+      - rpm_caddy_config:/config
+    depends_on:
+      - app
+      - nea
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------- Backups --
+  # pg_dump de las DOS bases a un volumen local, con retención. Sin S3 ni
+  # servicios de terceros (Constitución II): el respaldo vive en el disco del
+  # servidor y sacarlo de ahí es una decisión del dueño — ver docs/deploy-rpm.md,
+  # que explica cómo bajarlo y, sobre todo, cómo RESTAURARLO.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_EVERY_HOURS: ${BACKUP_EVERY_HOURS:-24}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./deploy/backup.sh:/usr/local/bin/backup.sh:ro
+      - rpm_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Espera a los DOS servicios sanos, no solo a Postgres: cada uno migra
+      # SU base al arrancar, y "sano" es justamente lo que pasa después de
+      # migrar. Sin esto el primer dump sale de bases a medio crear: el de
+      # `vocero` salía de 797 bytes y el de `nea` sin una sola tabla, y los
+      # dos parecían respaldos — que es peor que no tener ninguno, porque uno
+      # cree que tiene.
+      app:
+        condition: service_healthy
+      nea:
+        condition: service_healthy
+    entrypoint: ["sh", "/usr/local/bin/backup.sh"]
+
+volumes:
+  rpm_pg:
+  rpm_media:
+  rpm_backups:
+  rpm_caddy_data:
+  rpm_caddy_config:

@@ -39,6 +39,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Cómo se entrega la reunión (Zoom, Meet…) | `src/server/agenda/connectors/` + catálogo en `src/lib/agenda-connectors.ts` · guía: [docs/agenda-conectores.md](docs/agenda-conectores.md) |
 | La atribución de anuncios y el reporte a Meta | `src/server/attribution/` — detrás de la bandera `ATRIBUCION` (`flag.ts`) + `src/lib/meta/capi.ts` · guía: [docs/atribucion-capi.md](docs/atribucion-capi.md) |
 | UI | `src/components/` + `src/app/(app)/` |
+| El despliegue (stack completo, TLS, respaldos) | `docker-compose.rpm.yml` · `Caddyfile.rpm` · `deploy/` · guía: [docs/deploy-rpm.md](docs/deploy-rpm.md) |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
 ai-mock) tras un gate único (`src/lib/dev-guard.ts`): 404 incondicional en
@@ -97,6 +98,26 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   migración aplicada igual. Nunca en una rama aparte
   ([ADR-001](docs/adr-001-canales-opcionales.md),
   [ADR-002](docs/adr-002-conectores-de-agenda.md)).
+
+## Despliegue (017 Fase 8)
+
+Un servidor, cinco contenedores: Caddy (TLS automático), el CRM, el agente Nea,
+UN Postgres con DOS bases (`vocero` y `nea`) y un job de respaldos. Se levanta
+con `docker compose -f docker-compose.rpm.yml up -d --build` desde `vocero-crm`,
+con `nea-agent` clonado al lado. El `docker-compose.yml` de siempre sigue
+sirviendo para levantar el CRM solo.
+
+Dos cosas que no son obvias y que conviene no romper:
+
+- **Del agente solo se publica `/webhook`.** Meta necesita alcanzarlo; nada más
+  de Nea sí. El CRM le habla por la red interna de Docker, así que `/lab/turn`
+  y `/health` responden 404 desde afuera (`Caddyfile.rpm`).
+- **Los respaldos esperan a que los dos servicios estén sanos**, porque "sano"
+  es lo que pasa después de migrar. Sin eso el primer dump sale de bases a
+  medio crear y parece un respaldo bueno.
+
+Las credenciales de WhatsApp (waba_id, phone_number_id, token) NO son
+variables de entorno: se cargan desde la UI y quedan cifradas en la base.
 
 ## Variables de entorno
 

@@ -1,0 +1,38 @@
+# =============================================================================
+# RPM Construcciones — TLS automático y dos entradas (017 Fase 8)
+#
+# El CRM en el dominio principal; el agente en un subdominio, y SOLO su
+# webhook. Guía: docs/deploy-rpm.md
+# =============================================================================
+
+# ------------------------------------------------------------------- El CRM --
+{$DOMAIN} {
+	reverse_proxy app:3000 {
+		# SSE (/api/events): sin buffering ni timeouts cortos en el proxy, o la
+		# bandeja deja de actualizarse sola.
+		flush_interval -1
+	}
+	encode gzip
+}
+
+# ---------------------------------------------------------------- El agente --
+# Meta necesita alcanzar el webhook de Nea desde internet. NADA MÁS de Nea
+# necesita ser público: el CRM le habla por la red interna de Docker.
+#
+# Por eso este bloque es una lista blanca de una sola ruta en vez de un
+# reverse_proxy abierto. Lo que deja afuera importa: `/lab/turn` corre turnos
+# del agente contra el LLM (con costo por llamada) y `/health` cuenta de tu
+# infraestructura. Los dos piden API key, pero una superficie que nadie
+# necesita alcanzar es mejor no publicarla: no se puede atacar lo que no
+# responde.
+{$BOT_DOMAIN} {
+	@webhook path /webhook /webhook/*
+	handle @webhook {
+		reverse_proxy nea:8000
+	}
+	# Todo lo demás no existe acá afuera.
+	handle {
+		respond 404
+	}
+	encode gzip
+}
