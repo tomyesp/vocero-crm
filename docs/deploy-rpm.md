@@ -13,14 +13,35 @@ respaldo) para volver a consultar después.
 
 | Qué | Dónde | Costo aprox. |
 |---|---|---|
-| Un VPS Linux, 2 vCPU / 4 GB RAM | Hetzner, DigitalOcean, Contabo… | USD 5–15/mes |
+| Un VPS Linux | Hostinger, Hetzner, DigitalOcean… | USD 5–15/mes |
 | Un dominio | Namecheap, Cloudflare, NIC.ar… | USD 10–15/año |
 | Cuenta de Meta for Developers con WhatsApp Business | developers.facebook.com | gratis |
 | Créditos de LLM | openrouter.ai | ~USD 3 cada 1.000 conversaciones |
 
-4 GB de RAM es holgado: el CRM y el agente juntos usan menos de 1 GB en
-reposo. Con 2 GB también anda; con 1 GB, el build de la imagen del CRM se
-queda sin memoria.
+### Cuánto servidor hace falta
+
+Medido sobre este stack, no estimado:
+
+| | |
+|---|---|
+| Los cinco contenedores en reposo | **228 MB de RAM** |
+| Imágenes en disco | ~1,1 GB |
+| Construir la imagen del CRM | anda con **1 vCPU y 2 GB**, tarda ~7 min |
+
+Con eso, un **Hostinger KVM 1** (1 vCPU, 4 GB, 50 GB NVMe) sobra: le queda más
+de 3 GB libre con todo corriendo, y como el build sobrevive con 2 GB, actualizar
+sin bajar el stack es seguro.
+
+Lo único que se nota con 1 vCPU es el **tiempo de despliegue**: construir la
+imagen tarda 6–7 minutos, contra uno o dos en una máquina con varios núcleos.
+No falla, tarda. Durante ese rato el sitio sigue arriba: Docker recién
+reemplaza cada servicio cuando su imagen nueva está lista.
+
+Lo que NO se nota es la conversación: un turno del agente se va casi entero en
+esperar al LLM, no en CPU. Si escriben varios leads a la vez, los turnos se
+encolan unos milisegundos — con el volumen de un negocio de alquiler, invisible.
+
+Con 1 GB de RAM, en cambio, el build del CRM sí se queda sin memoria.
 
 ### ¿Y Coolify?
 
@@ -224,6 +245,26 @@ docker compose -f docker-compose.rpm.yml up -d --build
 Las migraciones de base corren solas al arrancar cada contenedor. No hace falta
 bajar el stack: Docker reemplaza cada servicio cuando su imagen nueva está
 lista.
+
+## Espacio en disco
+
+Los 50 GB de un KVM 1 alcanzan de sobra, pero tres cosas crecen con el tiempo:
+los adjuntos de WhatsApp (volumen `rpm_media`), los respaldos (`rpm_backups`,
+podados solos a los 14 días) y las imágenes viejas que deja cada actualización.
+
+Las imágenes viejas son las únicas que no se limpian solas — cada rebuild deja
+una de ~326 MB colgando. Después de actualizar:
+
+```bash
+docker image prune -f
+```
+
+Ver cómo va el disco:
+
+```bash
+df -h /
+docker system df
+```
 
 ## Respaldos
 
