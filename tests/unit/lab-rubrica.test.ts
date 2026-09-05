@@ -123,6 +123,7 @@ describe("buildJudgePrompt", () => {
     const { system } = buildJudgePrompt(base);
     for (const tipo of [
       "precio_sin_cotizar",
+      "precio_sin_condiciones",
       "disponibilidad_inventada",
       "maquina_inexistente",
       "reserva_mal_manejada",
@@ -130,6 +131,15 @@ describe("buildJudgePrompt", () => {
     ]) {
       expect(system).toContain(tipo);
     }
+  });
+
+  it("la rúbrica explica cómo se dice un precio, no solo de dónde sale", () => {
+    // Un monto correcto dicho sin "+ IVA" no es un precio inventado, pero le
+    // deja al cliente una sorpresa del 21% para el día de la factura.
+    const { system } = buildJudgePrompt(base);
+    expect(system).toContain("NO incluye IVA");
+    expect(system).toContain("operario o el combustible como un extra");
+    expect(system).toContain("cuántas horas por día");
   });
 
   it("los silencios con motivo llegan al juez para que no los castigue", () => {
@@ -245,7 +255,7 @@ describe("el juez no puede confundir al cliente con el agente", () => {
     const modelos = Array.from({ length: 5 }, (_, i) => ({
       id: `mmod_${i}`,
       nombre: `Máquina de prueba número ${i}`,
-      tarifaDiaria: 185000 + i,
+      tarifaHora: 185000 + i,
     }));
     const out = renderToolTrace([
       { herramienta: "buscar_maquinas", argumentos: {}, resultado: { ok: true, modelos } },

@@ -141,8 +141,12 @@ export function RentalsClient() {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-3">
               {r.contact && <span>{r.contact.name ?? "Contacto sin nombre"}</span>}
               {r.siteLocation && <span>{r.siteLocation}</span>}
+              {r.hoursPerDay !== null && <span>{r.hoursPerDay} hs/día</span>}
               {r.quotedAmountCents !== null && (
-                <span>{formatMoneyCents(r.quotedAmountCents, "ARS", "es-AR")}</span>
+                <span>
+                  {formatMoneyCents(r.quotedAmountCents, "ARS", "es-AR")}
+                  <span className="text-text-3"> + IVA</span>
+                </span>
               )}
               {r.status === "tentativa" && r.expiresAt && (
                 <span className="text-warning-text">

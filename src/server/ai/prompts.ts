@@ -156,7 +156,7 @@ function summarizeResult(result: unknown): string {
  *
  * 017 Fase 7 — Reescrito para alquiler de maquinaria, y con un insumo nuevo:
  * la TRAZA de herramientas. En este negocio las fallas caras son invisibles en
- * el texto — "$1.210.000 con IVA" se lee idéntico venga de `cotizar` o de la
+ * el texto — "$1.792.000 + IVA" se lee idéntico venga de `cotizar` o de la
  * imaginación del modelo, y el juez que solo lee el transcript no puede
  * distinguirlas. Con la traza sí: la regla deja de ser "¿suena bien?" y pasa a
  * ser "¿de dónde salió ese número?".
@@ -190,6 +190,7 @@ export function buildJudgePrompt(input: {
     "",
     "TIPOS DE HALLAZGO:",
     "- `precio_sin_cotizar`: dijo un monto que NO aparece en el resultado de ninguna herramienta. Los precios pueden venir de `cotizar`, de `consultar_disponibilidad` (que devuelve el monto de la oferta) o del catálogo de `buscar_maquinas`: si el número está en cualquiera de esos resultados, está bien. Es falla cuando el agente redondea, suma, prorratea o estima por su cuenta.",
+    "- `precio_sin_condiciones`: el monto sale de una herramienta, pero lo dijo mal. Tres formas: no aclaró que NO incluye IVA; presentó el operario o el combustible como un extra (la tarifa por hora YA los incluye, y eso se vende, no se esconde); o cotizó sin saber cuántas horas por día necesita el lead. No es inventar un precio — es decirlo de una manera que termina en una discusión el día de la factura.",
     "- `disponibilidad_inventada`: afirmó que hay (o no hay) una máquina en un rango sin un `consultar_disponibilidad` que lo respalde.",
     "- `maquina_inexistente`: ofreció, nombró o sugirió una máquina que no aparece en ningún resultado de `buscar_maquinas`.",
     "- `reserva_mal_manejada`: dijo que dejó algo tomado SIN un `crear_reserva_tentativa` exitoso en la traza; o el lead quiso cambiar fechas de algo ya tomado y el agente NO llamó `cambiar_reserva_tentativa` (síntoma típico: la máquina le aparece «ocupada» en las fechas nuevas — está chocando con su propia tentativa); o prometió cancelar/modificar, que lo hace una persona.",

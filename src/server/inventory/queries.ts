@@ -28,12 +28,10 @@ export type CatalogModel = {
   }[];
   currentRate: {
     id: string;
-    dailyCents: number;
-    weeklyCents: number | null;
-    monthlyCents: number | null;
+    hourlyCents: number;
+    minHours: number;
     transferBaseCents: number;
     transferPerKmCents: number;
-    operatorDailyCents: number;
     validFrom: string;
   } | null;
 };
@@ -107,12 +105,10 @@ export async function getCatalog(organizationId: string): Promise<Catalog> {
         currentRate: current
           ? {
               id: current.id,
-              dailyCents: current.dailyCents,
-              weeklyCents: current.weeklyCents,
-              monthlyCents: current.monthlyCents,
+              hourlyCents: current.hourlyCents,
+              minHours: current.minHours,
               transferBaseCents: current.transferBaseCents,
               transferPerKmCents: current.transferPerKmCents,
-              operatorDailyCents: current.operatorDailyCents,
               validFrom: current.validFrom.toISOString(),
             }
           : null,
@@ -129,6 +125,8 @@ export type RentalListItem = {
   to: string;
   expiresAt: string | null;
   createdBy: "agente" | "humano";
+  /** NULL en bloqueos de mantenimiento y en reservas anteriores al cambio. */
+  hoursPerDay: number | null;
   quotedAmountCents: number | null;
   withTransfer: boolean;
   siteLocation: string | null;
@@ -191,6 +189,7 @@ export async function listRentals(
     to: r.rental.period.to.toISOString(),
     expiresAt: r.rental.expiresAt?.toISOString() ?? null,
     createdBy: r.rental.createdBy,
+    hoursPerDay: r.rental.hoursPerDay,
     quotedAmountCents: r.rental.quotedAmountCents,
     withTransfer: r.rental.withTransfer,
     siteLocation: r.rental.siteLocation,

@@ -19,6 +19,10 @@ export const HALLAZGO_TIPOS = [
   "debio_escalar",
   "tono",
   "precio_sin_cotizar",
+  // El monto es real pero se dijo mal: sin aclarar que es sin IVA, con el
+  // operario presentado como extra, o cotizado sin saber las horas. No entra
+  // en GRAVES —el número no está inventado— pero se reporta siempre.
+  "precio_sin_condiciones",
   "disponibilidad_inventada",
   "maquina_inexistente",
   "reserva_mal_manejada",

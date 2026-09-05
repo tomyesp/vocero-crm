@@ -71,6 +71,9 @@ function serializeRental(r: typeof schema.rental.$inferSelect) {
     unidadId: r.unitId,
     desde: r.period.from.toISOString().slice(0, 10),
     hasta: r.period.to.toISOString().slice(0, 10),
+    // El monto sin las horas es un número que el agente no puede explicar si
+    // el lead lo repregunta. Viajan juntos.
+    horasPorDia: r.hoursPerDay,
     montoCotizadoCents: r.quotedAmountCents,
     expiraEn: r.expiresAt?.toISOString() ?? null,
   };

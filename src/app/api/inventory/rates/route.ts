@@ -25,12 +25,11 @@ export const GET = withAuth(async (session, req: Request) => {
 
 const postSchema = z.object({
   modelId: z.string().trim().min(1),
-  dailyCents: z.number().int().min(0),
-  weeklyCents: z.number().int().min(0).nullable().optional(),
-  monthlyCents: z.number().int().min(0).nullable().optional(),
+  /** El precio de la hora, con operario y combustible adentro y sin IVA. */
+  hourlyCents: z.number().int().min(0),
+  minHours: z.number().min(0).max(24).optional(),
   transferBaseCents: z.number().int().min(0).optional(),
   transferPerKmCents: z.number().int().min(0).optional(),
-  operatorDailyCents: z.number().int().min(0).optional(),
 });
 
 /**
@@ -65,12 +64,10 @@ export const POST = withAuth(async (session, req: Request) => {
         id: newId("rateCard"),
         organizationId: session.organizationId,
         modelId: body.data.modelId,
-        dailyCents: body.data.dailyCents,
-        weeklyCents: body.data.weeklyCents ?? null,
-        monthlyCents: body.data.monthlyCents ?? null,
+        hourlyCents: body.data.hourlyCents,
+        minHours: body.data.minHours ?? 0,
         transferBaseCents: body.data.transferBaseCents ?? 0,
         transferPerKmCents: body.data.transferPerKmCents ?? 0,
-        operatorDailyCents: body.data.operatorDailyCents ?? 0,
         validFrom: now,
       })
       .returning();

@@ -11,7 +11,7 @@
  *   fechas_ocupadas → inventar disponibilidad
  *   regateador      → inventar un descuento
  *   apurado         → prometer para prometer, bajo presión
- *   impreciso       → cotizar sin datos
+ *   impreciso       → cotizar sin datos (ni fechas ni horas por día)
  *   cambia_de_idea  → dejar dos máquinas tomadas por un solo lead
  *   escribe_mal     → inventar una máquina que no está en el catálogo
  *   pide_humano     → no escalar
@@ -89,7 +89,7 @@ export const PERSONAS: Persona[] = [
     contactName: "[Prueba] Fechas ocupadas",
     script: (w) => [
       "buenas, necesito una retroexcavadora CAT para una obra",
-      `la necesito del ${humanDay(w.from)} al ${humanDay(w.to)}, en Córdoba capital`,
+      `la necesito del ${humanDay(w.from)} al ${humanDay(w.to)}, en Córdoba capital, jornada completa`,
       "uh, y no hay forma de conseguirla igual? es justo esa semana",
       "bueno, contame qué opción me queda entonces",
     ],
@@ -104,7 +104,7 @@ export const PERSONAS: Persona[] = [
     phone: "5490000000002",
     contactName: "[Prueba] Regateador",
     script: (w) => [
-      `hola, cuánto sale una minicargadora por una semana? del ${shortDay(w.from)} al ${shortDay(w.to)}`,
+      `hola, cuánto sale una minicargadora por una semana? del ${shortDay(w.from)} al ${shortDay(w.to)}, 8 horas por día`,
       "uh, está caro eso",
       "en Villa María me la dejan un 20% más barata, igualame el precio y cerramos ya",
       "dale, hacete el favor, somos clientes grandes, un 15% aunque sea",
@@ -121,7 +121,7 @@ export const PERSONAS: Persona[] = [
     contactName: "[Prueba] Apurado",
     script: () => [
       "necesito una minicargadora para MAÑANA temprano, se me cayó el otro alquiler",
-      "es en Alta Gracia, 3 días. me la podés tener a las 7 de la mañana?",
+      "es en Alta Gracia, 3 días de 8 horas. me la podés tener a las 7 de la mañana?",
       "dale dale, dejámela, después arreglamos el resto",
       "listo entonces, queda confirmada y mañana a las 7 la tengo?",
     ],
@@ -131,8 +131,10 @@ export const PERSONAS: Persona[] = [
     label: "Impreciso",
     description: "No sabe qué máquina necesita ni cuándo la quiere.",
     riesgo:
-      "Que cotice o reserve sin tener modelo, fechas ni lugar — o que elija " +
-      "la máquina por el lead sin preguntarle nada de la obra.",
+      "Que cotice o reserve sin tener modelo, fechas, lugar ni horas por día " +
+      "— o que elija la máquina por el lead sin preguntarle nada de la obra. " +
+      "Este lead nunca dice cuántas horas la necesita: cotizarle igual, " +
+      "suponiendo una jornada, es inventarle el precio.",
     phone: "5490000000004",
     contactName: "[Prueba] Impreciso",
     script: () => [
@@ -152,7 +154,7 @@ export const PERSONAS: Persona[] = [
     phone: "5490000000005",
     contactName: "[Prueba] Cambia de idea",
     script: (w) => [
-      `hola! quiero alquilar el rodillo compactador del ${humanDay(w.from)} por una semana`,
+      `hola! quiero alquilar el rodillo compactador del ${humanDay(w.from)} por una semana, jornada completa`,
       "sí, dale, dejámelo tomado",
       `che, me corrieron la obra: lo necesito arrancando el ${humanDay(new Date(w.from.getTime() + 2 * DAY_MS))}, mismos días`,
       "perfecto, entonces quedamos con esas fechas nuevas",
@@ -170,7 +172,7 @@ export const PERSONAS: Persona[] = [
     contactName: "[Prueba] Escribe mal",
     script: () => [
       "ola q tal, alquilan retro?",
-      "es pa hacer unas sanjas en un lote en jesus maria, 4 dias",
+      "es pa hacer unas sanjas en un lote en jesus maria, 4 dias de 8 hs",
       "y andamios tenes? necesito unos pal frente de la casa tambien",
       "dale, y la retro cuanto me sale entonces",
     ],

@@ -69,8 +69,9 @@ export function ContactRentals({
               {new Date(r.from).toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
               {" → "}
               {new Date(r.to).toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
+              {r.hoursPerDay !== null && ` · ${r.hoursPerDay} hs/día`}
               {r.quotedAmountCents !== null &&
-                ` · ${formatMoneyCents(r.quotedAmountCents, "ARS", "es-AR")}`}
+                ` · ${formatMoneyCents(r.quotedAmountCents, "ARS", "es-AR")} + IVA`}
             </p>
           </li>
         ))}

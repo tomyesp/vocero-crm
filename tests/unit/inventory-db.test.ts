@@ -181,6 +181,7 @@ describe.runIf(dbAvailable)("inventario contra Postgres real", () => {
       modelId,
       unitId: unitB,
       period: { from: day(40), to: day(45) },
+      hoursPerDay: 8,
       quotedAmountCents: 100,
       label: "vencida",
       expiresAt: new Date(Date.now() - 1000),
@@ -202,6 +203,7 @@ describe.runIf(dbAvailable)("inventario contra Postgres real", () => {
         modelId,
         unitId: unitB,
         period: { from: day(50), to: day(55) },
+        hoursPerDay: 6,
         quotedAmountCents: 999_00,
         label: "Retro de prueba, día 50 al 55",
       },
@@ -216,6 +218,8 @@ describe.runIf(dbAvailable)("inventario contra Postgres real", () => {
     expect(rental.status).toBe("tentativa");
     expect(rental.unitId).toBe(unitB);
     expect(rental.quotedAmountCents).toBe(999_00);
+    // El precio sin las horas no se puede explicar: la reserva hereda las dos.
+    expect(rental.hoursPerDay).toBe(6);
     expect(rental.expiresAt).not.toBeNull();
     expect(rental.contactId).toBe(contactId);
 
@@ -329,6 +333,7 @@ describe.runIf(dbAvailable)("inventario contra Postgres real", () => {
       modelId,
       unitId: unitA,
       period,
+      hoursPerDay: 8,
       quotedAmountCents: 500_00 + i,
       label: `carrera ${i}`,
       expiresAt: new Date(Date.now() + 60_000),

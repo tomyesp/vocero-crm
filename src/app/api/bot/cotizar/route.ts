@@ -12,6 +12,10 @@ export const dynamic = "force-dynamic";
 const postSchema = z.object({
   modeloId: z.string().trim().min(1),
   dias: z.number().int().min(1).max(365),
+  // OBLIGATORIA: RPM cotiza la hora, así que sin horas no hay precio. Que sea
+  // requerida es el guardarraíl — obliga a que alguien se lo haya preguntado
+  // al lead en vez de que el servidor suponga una jornada.
+  horasPorDia: z.number().min(0.5).max(24),
   // `.optional()` y no `.default()`: con un default, Zod 3 hace que el tipo de
   // entrada difiera del de salida y `parseBody` exige que coincidan.
   conTraslado: z.boolean().optional(),
@@ -55,24 +59,29 @@ export async function POST(req: Request) {
 
   const q = computeQuote(rate, {
     days: body.data.dias,
+    hoursPerDay: body.data.horasPorDia,
     withTransfer: body.data.conTraslado ?? false,
     km: body.data.km,
-    requiresOperator: model.requiresOperator,
   });
 
   return Response.json({
     modelo: model.name,
     dias: q.days,
-    escalon: q.tier,
+    horasPorDia: q.hoursPerDay,
+    horasFacturadas: q.billedHours,
+    // Distinto de `horasFacturadas` solo cuando el mínimo del tarifario pisó
+    // lo pedido: es lo que el agente tiene que poder explicar sin inventar.
+    horasPedidas: q.requestedHours,
+    minimoHoras: q.minHours,
+    tarifaHoraCents: q.hourlyCents,
     desglose: {
-      baseCents: q.baseCents,
+      maquinaCents: q.machineCents,
       trasladoCents: q.transferCents,
-      operarioCents: q.operatorCents,
-      subtotalCents: q.subtotalCents,
-      ivaPct: q.ivaPct,
-      ivaCents: q.ivaCents,
       totalCents: q.totalCents,
     },
+    incluyeOperario: true,
+    incluyeCombustible: true,
+    incluyeIva: false,
     requiereOperario: model.requiresOperator,
   });
 }

@@ -92,6 +92,20 @@
       "when": 1788402462446,
       "tag": "0012_naive_hemingway",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788613863387,
+      "tag": "0013_tarifa_por_hora",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788613899527,
+      "tag": "0014_baja_tarifa_diaria",
+      "breakpoints": true
     }
   ]
 }

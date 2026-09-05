@@ -78,7 +78,7 @@ export async function seedInventory(db: Db, organizationId: string) {
       description:
         "Retro combinada 4x4 con balde frontal y brazo excavador. La más pedida para zanjeo, movimiento de suelo y carga en obra urbana.",
       photos: [],
-      requiresOperator: false,
+      requiresOperator: true,
       active: true,
     },
     {
@@ -97,7 +97,7 @@ export async function seedInventory(db: Db, organizationId: string) {
       description:
         "Retro 4x2 confiable para zanjeo y saneamiento. Menor porte que la 3CX; entra mejor en calles angostas.",
       photos: [],
-      requiresOperator: false,
+      requiresOperator: true,
       active: true,
     },
     {
@@ -115,7 +115,7 @@ export async function seedInventory(db: Db, organizationId: string) {
       description:
         "Minicargadora compacta para movimiento de áridos, limpieza de obra y patios. Acepta accesorios de enganche rápido.",
       photos: [],
-      requiresOperator: false,
+      requiresOperator: true,
       active: true,
     },
     {
@@ -131,7 +131,7 @@ export async function seedInventory(db: Db, organizationId: string) {
         camion: "Ford Cargo 1723",
       },
       description:
-        "Hidrogrúa articulada montada sobre camión. Izaje y descarga de materiales en obra. Se alquila SIEMPRE con operario habilitado.",
+        "Hidrogrúa articulada montada sobre camión. Izaje y descarga de materiales en obra. Operario habilitado y camión incluidos.",
       photos: [],
       requiresOperator: true,
       active: true,
@@ -150,7 +150,7 @@ export async function seedInventory(db: Db, organizationId: string) {
       description:
         "Rodillo doble tambor vibratorio para bases, sub-bases y asfalto en caliente. Ideal veredas, playones y calles internas.",
       photos: [],
-      requiresOperator: false,
+      requiresOperator: true,
       active: true,
     },
   ];
@@ -178,49 +178,23 @@ export async function seedInventory(db: Db, organizationId: string) {
   await db.insert(schema.machineUnit).values(units);
   const unitByCode = Object.fromEntries(units.map((u) => [u.internalCode, u.id!]));
 
-  // Tarifas ARS ago-2026 (centavos): diaria / semanal / mensual + extras.
+  // Tarifas ARS ago-2026 (centavos): la HORA de máquina, con operario y
+  // combustible adentro y sin IVA — así cotiza RPM. Sin mínimo de horas, que
+  // es la condición real del negocio; el campo existe por si algún día la hay.
   const rates: (typeof schema.rateCard.$inferInsert)[] = [
-    {
-      model: "Retroexcavadora JCB 3CX",
-      daily: 210 * K,
-      weekly: 1_150 * K,
-      monthly: 3_900 * K,
-    },
-    {
-      model: "Retroexcavadora CAT 416F2",
-      daily: 185 * K,
-      weekly: 1_000 * K,
-      monthly: 3_400 * K,
-    },
-    {
-      model: "Minicargadora Bobcat S570",
-      daily: 120 * K,
-      weekly: 650 * K,
-      monthly: 2_200 * K,
-    },
-    {
-      model: "Hidrogrúa Palfinger PK 12000 s/camión",
-      daily: 260 * K,
-      weekly: 1_400 * K,
-      monthly: null,
-      operator: 85 * K,
-    },
-    {
-      model: "Rodillo compactador JCB VMT 260",
-      daily: 95 * K,
-      weekly: 520 * K,
-      monthly: 1_750 * K,
-    },
+    { model: "Retroexcavadora JCB 3CX", hourly: 32 * K },
+    { model: "Retroexcavadora CAT 416F2", hourly: 28 * K },
+    { model: "Minicargadora Bobcat S570", hourly: 22 * K },
+    { model: "Hidrogrúa Palfinger PK 12000 s/camión", hourly: 38 * K },
+    { model: "Rodillo compactador JCB VMT 260", hourly: 18 * K },
   ].map((r) => ({
     id: newId("rateCard"),
     organizationId,
     modelId: modelByName[r.model]!,
-    dailyCents: r.daily,
-    weeklyCents: r.weekly,
-    monthlyCents: r.monthly ?? null,
+    hourlyCents: r.hourly,
+    minHours: 0,
     transferBaseCents: 60 * K,
     transferPerKmCents: 1_200_00, // $1.200/km
-    operatorDailyCents: (r as { operator?: number }).operator ?? 0,
     validFrom: day(-30),
   }));
   await db.insert(schema.rateCard).values(rates);
@@ -235,7 +209,9 @@ export async function seedInventory(db: Db, organizationId: string) {
       period: { from: day(-2), to: day(8) },
       status: "confirmada",
       createdBy: "humano",
-      quotedAmountCents: 1_150 * K,
+      hoursPerDay: 8,
+      quotedAmountCents: 10 * 8 * 32 * K, // 10 días × 8 hs × $32.000
+
       withTransfer: true,
       siteLocation: "Obra en Malagueño, Córdoba",
       notes: "Seed: alquiler confirmado en curso",

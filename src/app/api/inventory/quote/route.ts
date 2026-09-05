@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 const postSchema = z.object({
   modelId: z.string().trim().min(1),
   days: z.number().int().min(1).max(365),
+  hoursPerDay: z.number().min(0.5).max(24),
   withTransfer: z.boolean().optional(),
   km: z.number().min(0).max(2000).optional(),
 });
@@ -26,21 +27,20 @@ export const POST = withAuth(async (session, req: Request) => {
 
   const db = getDb();
   const models = await db
-    .select({ requiresOperator: schema.machineModel.requiresOperator })
+    .select({ id: schema.machineModel.id })
     .from(schema.machineModel)
     .where(scoped(schema.machineModel.organizationId, session.organizationId, eq(schema.machineModel.id, body.data.modelId)))
     .limit(1);
-  const model = models[0];
-  if (!model) return apiError(404, "not_found", "Modelo inexistente");
+  if (!models[0]) return apiError(404, "not_found", "Modelo inexistente");
 
   const rate = await getCurrentRate(session.organizationId, body.data.modelId);
   if (!rate) return apiError(409, "sin_tarifa", "El modelo no tiene tarifa vigente");
 
   const quote = computeQuote(rate, {
     days: body.data.days,
+    hoursPerDay: body.data.hoursPerDay,
     withTransfer: body.data.withTransfer ?? false,
     km: body.data.km,
-    requiresOperator: model.requiresOperator,
   });
   return Response.json({ quote });
 });

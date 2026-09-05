@@ -307,7 +307,7 @@ function ModelCard({
             )}
           </CardTitle>
           <span className="text-xs text-text-3">{category?.name}</span>
-          {model.requiresOperator && <Badge variant="warning">Con operario</Badge>}
+          {!model.requiresOperator && <Badge variant="warning">Sin operario</Badge>}
           <Badge variant={model.active ? "success" : "secondary"}>
             {model.active ? "Activo" : "Apagado"}
           </Badge>
@@ -341,7 +341,7 @@ function ModelCard({
                 })
               }
             >
-              {model.requiresOperator ? "Quitar operario obligatorio" : "Exigir operario"}
+              {model.requiresOperator ? "Marcar sin operario" : "Marcar con operario"}
             </Button>
             <Button
               size="sm"

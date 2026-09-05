@@ -18,6 +18,7 @@ export type IssuedOffer = {
   modelId: string;
   unitId: string;
   period: Period;
+  hoursPerDay: number;
   quotedAmountCents: number;
   label: string;
   expiresAt: Date;
@@ -27,6 +28,9 @@ export type OfferDraft = {
   modelId: string;
   unitId: string;
   period: Period;
+  /** Las horas por día con las que se calculó el monto; sin ellas el precio
+   *  ofrecido no se puede reproducir ni explicar. */
+  hoursPerDay: number;
   quotedAmountCents: number;
   /** La etiqueta EXACTA que verá el cliente; la reserva la hereda. */
   label: string;
@@ -51,6 +55,7 @@ export async function replaceRentalOffers(
     modelId: d.modelId,
     unitId: d.unitId,
     period: d.period,
+    hoursPerDay: d.hoursPerDay,
     quotedAmountCents: d.quotedAmountCents,
     label: d.label,
     expiresAt,
@@ -73,6 +78,7 @@ export async function replaceRentalOffers(
     modelId: r.modelId,
     unitId: r.unitId,
     period: r.period,
+    hoursPerDay: r.hoursPerDay,
     quotedAmountCents: r.quotedAmountCents,
     label: r.label,
     expiresAt,

@@ -88,6 +88,13 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   uses el juez chico: `OPENROUTER_JUDGE_MODEL` con un modelo de conversación
   barato marcaba como falla la frase que la propia herramienta le dicta al
   agente.
+- **Un solo número por máquina (017, fork RPM)**: el tarifario tiene la HORA
+  de máquina y nada más. No hay escalón semanal ni mensual —una obra larga son
+  más horas, no otra tarifa—, no hay renglón de operario ni de combustible
+  —van en la hora— y el motor no calcula IVA: los precios del negocio son
+  netos y el agente lo aclara. `QuoteBreakdown.includesVat` es el literal
+  `false` justamente para que nadie pueda leer un total y suponer lo
+  contrario. Lo único que se cobra aparte es el traslado.
 - **Dos calendarios (017 Fase 7)**: `rental.is_test` no es una marca decorativa
   — separa el inventario real del que ve el Laboratorio, en las DOS
   direcciones. Una corrida no puede hacer que un lead real escuche "no hay", y

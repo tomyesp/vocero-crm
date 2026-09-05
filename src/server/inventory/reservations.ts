@@ -37,7 +37,7 @@ export type ModelAlternative = {
   modelId: string;
   name: string;
   brand: string | null;
-  dailyCents: number | null;
+  hourlyCents: number | null;
 };
 
 /** Error tipado; `code` mapea a HTTP en la capa de API (como SendError). */
@@ -104,6 +104,7 @@ async function buildRaceRecovery(
         modelId: offer.modelId,
         unitId: unit.id,
         period: offer.period,
+        hoursPerDay: offer.hoursPerDay,
         quotedAmountCents: offer.quotedAmountCents,
         label: offer.label,
       },
@@ -130,7 +131,12 @@ async function buildRaceRecovery(
   const out: ModelAlternative[] = [];
   for (const a of alts) {
     const rate = await getCurrentRate(organizationId, a.modelId);
-    out.push({ modelId: a.modelId, name: a.name, brand: a.brand, dailyCents: rate?.dailyCents ?? null });
+    out.push({
+      modelId: a.modelId,
+      name: a.name,
+      brand: a.brand,
+      hourlyCents: rate?.hourlyCents ?? null,
+    });
   }
   return { offers: [], alternatives: out };
 }
@@ -239,6 +245,7 @@ export async function createTentativeRental(
           status: "tentativa",
           expiresAt: new Date(Date.now() + TENTATIVE_TTL_MS),
           createdBy: input.createdBy,
+          hoursPerDay: offer.hoursPerDay,
           quotedAmountCents: offer.quotedAmountCents,
           withTransfer: input.withTransfer ?? false,
           siteLocation: input.siteLocation ?? null,
@@ -319,6 +326,7 @@ export async function moveTentativeRental(
         .set({
           unitId: offer.unitId,
           period: offer.period,
+          hoursPerDay: offer.hoursPerDay,
           quotedAmountCents: offer.quotedAmountCents,
           expiresAt: new Date(Date.now() + TENTATIVE_TTL_MS),
           updatedAt: new Date(),

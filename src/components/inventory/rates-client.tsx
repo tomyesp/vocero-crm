@@ -13,6 +13,10 @@ import { formatMoneyCents, parseMoneyToCents } from "@/lib/money";
  * 017 — Tarifas con vigencia temporal + simulador de cotización.
  * El simulador llama /api/inventory/quote, que usa EXACTAMENTE la misma
  * función que el endpoint del bot: lo que se ve acá es lo que dice el agente.
+ *
+ * Una tarifa de RPM es UN número: el precio de la hora de máquina, con
+ * operario y combustible adentro y sin IVA. Lo único que se carga aparte es
+ * el traslado.
  */
 
 const SELECT_CLS =
@@ -21,18 +25,21 @@ const ARS = "ARS";
 
 type RateRow = {
   id: string;
-  dailyCents: number;
-  weeklyCents: number | null;
-  monthlyCents: number | null;
+  hourlyCents: number;
+  minHours: number;
   transferBaseCents: number;
   transferPerKmCents: number;
-  operatorDailyCents: number;
   validFrom: string;
   validTo: string | null;
 };
 
 function money(cents: number | null | undefined): string {
   return formatMoneyCents(cents ?? null, ARS, "es-AR") ?? "—";
+}
+
+/** 8, no "8.0"; 4,5 con coma, que es como se escribe media jornada acá. */
+function hours(h: number): string {
+  return Number.isInteger(h) ? String(h) : String(h).replace(".", ",");
 }
 
 export function RatesClient() {
@@ -98,7 +105,7 @@ export function RatesClient() {
             }}
             onError={setError}
           />
-          <Simulator modelId={model.id} requiresOperator={model.requiresOperator} />
+          <Simulator modelId={model.id} />
           <Card>
             <CardHeader>
               <CardTitle>Histórico</CardTitle>
@@ -115,12 +122,10 @@ export function RatesClient() {
                       {" → "}
                       {r.validTo ? new Date(r.validTo).toLocaleDateString("es-AR") : "vigente"}
                     </span>
-                    <span>Día: {money(r.dailyCents)}</span>
-                    <span>Semana: {money(r.weeklyCents)}</span>
-                    <span>Mes: {money(r.monthlyCents)}</span>
+                    <span>Hora: {money(r.hourlyCents)}</span>
                     <span className="text-text-3">
-                      Traslado {money(r.transferBaseCents)} + {money(r.transferPerKmCents)}/km ·
-                      Operario {money(r.operatorDailyCents)}/día
+                      {r.minHours > 0 ? `Mínimo ${hours(r.minHours)} hs · ` : "Sin mínimo · "}
+                      Traslado {money(r.transferBaseCents)} + {money(r.transferPerKmCents)}/km
                     </span>
                   </li>
                 ))}
@@ -168,30 +173,28 @@ function NewRate({
   onSaved: () => void;
   onError: (msg: string | null) => void;
 }) {
-  const [daily, setDaily] = useState("");
-  const [weekly, setWeekly] = useState("");
-  const [monthly, setMonthly] = useState("");
+  const [hourly, setHourly] = useState("");
+  const [minHours, setMinHours] = useState("");
   const [transferBase, setTransferBase] = useState("");
   const [transferKm, setTransferKm] = useState("");
-  const [operator, setOperator] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   // Precargar con la vigente: lo normal es ajustar, no arrancar de cero.
   useEffect(() => {
     const toInput = (c: number | null) => (c === null || c === 0 ? "" : String(c / 100));
-    setDaily(current ? String(current.dailyCents / 100) : "");
-    setWeekly(toInput(current?.weeklyCents ?? null));
-    setMonthly(toInput(current?.monthlyCents ?? null));
+    setHourly(current ? String(current.hourlyCents / 100) : "");
+    setMinHours(current && current.minHours > 0 ? String(current.minHours) : "");
     setTransferBase(toInput(current?.transferBaseCents ?? null));
     setTransferKm(toInput(current?.transferPerKmCents ?? null));
-    setOperator(toInput(current?.operatorDailyCents ?? null));
   }, [current, modelId]);
 
-  const dailyCents = parseMoneyToCents(daily);
+  const hourlyCents = parseMoneyToCents(hourly);
+  const minHoursNum = minHours.trim() === "" ? 0 : Number(minHours.replace(",", "."));
+  const minHoursOk = Number.isFinite(minHoursNum) && minHoursNum >= 0 && minHoursNum <= 24;
 
   async function save() {
-    if (dailyCents === null) return;
+    if (hourlyCents === null || !minHoursOk) return;
     setSaving(true);
     setSaved(false);
     onError(null);
@@ -200,12 +203,10 @@ function NewRate({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         modelId,
-        dailyCents,
-        weeklyCents: parseMoneyToCents(weekly),
-        monthlyCents: parseMoneyToCents(monthly),
+        hourlyCents,
+        minHours: minHoursNum,
         transferBaseCents: parseMoneyToCents(transferBase) ?? 0,
         transferPerKmCents: parseMoneyToCents(transferKm) ?? 0,
-        operatorDailyCents: parseMoneyToCents(operator) ?? 0,
       }),
     }).catch(() => null);
     setSaving(false);
@@ -222,42 +223,53 @@ function NewRate({
       <CardHeader>
         <CardTitle>Tarifa nueva</CardTitle>
         <CardDescription>
-          Montos en pesos (sin IVA). Semanal y mensual vacíos = ese escalón no se ofrece.
+          El precio de la HORA de máquina, en pesos y <strong>sin IVA</strong> — con operario y
+          combustible incluidos, que es como está el catálogo. El traslado se cobra aparte.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-3">
-          <MoneyField id="r-d" label="Por día" value={daily} onChange={setDaily} />
-          <MoneyField id="r-w" label="Por semana" value={weekly} onChange={setWeekly} />
-          <MoneyField id="r-m" label="Por mes" value={monthly} onChange={setMonthly} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <MoneyField id="r-h" label="Por hora" value={hourly} onChange={setHourly} />
+          <div className="space-y-1.5">
+            <Label htmlFor="r-min">Mínimo de horas</Label>
+            <Input
+              id="r-min"
+              value={minHours}
+              onChange={(e) => setMinHours(e.target.value)}
+              placeholder="sin mínimo"
+            />
+          </div>
           <MoneyField id="r-tb" label="Traslado base" value={transferBase} onChange={setTransferBase} />
           <MoneyField id="r-tk" label="Traslado por km" value={transferKm} onChange={setTransferKm} />
-          <MoneyField id="r-op" label="Operario por día" value={operator} onChange={setOperator} />
         </div>
         <div className="flex items-center gap-3">
-          <Button disabled={saving || dailyCents === null} onClick={() => void save()}>
+          <Button
+            disabled={saving || hourlyCents === null || !minHoursOk}
+            onClick={() => void save()}
+          >
             {saving ? "Guardando…" : "Guardar tarifa nueva"}
           </Button>
           {saved && <span className="text-sm text-brand-text">Guardado</span>}
+          {!minHoursOk && (
+            <span className="text-sm text-destructive">El mínimo va entre 0 y 24 horas</span>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function Simulator({
-  modelId,
-  requiresOperator,
-}: {
-  modelId: string;
-  requiresOperator: boolean;
-}) {
-  const [days, setDays] = useState("7");
+function Simulator({ modelId }: { modelId: string }) {
+  const [days, setDays] = useState("1");
+  const [hoursPerDay, setHoursPerDay] = useState("8");
   const [withTransfer, setWithTransfer] = useState(false);
   const [km, setKm] = useState("0");
   const [quote, setQuote] = useState<QuoteBreakdown | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const hoursNum = Number(hoursPerDay.replace(",", "."));
+  const canRun = Number(days) >= 1 && hoursNum > 0 && hoursNum <= 24;
 
   async function run() {
     setBusy(true);
@@ -269,6 +281,7 @@ function Simulator({
       body: JSON.stringify({
         modelId,
         days: Number(days),
+        hoursPerDay: hoursNum,
         withTransfer,
         km: Number(km) || 0,
       }),
@@ -305,6 +318,14 @@ function Simulator({
               onChange={(e) => setDays(e.target.value)}
             />
           </div>
+          <div className="w-28 space-y-1.5">
+            <Label htmlFor="sim-hours">Horas por día</Label>
+            <Input
+              id="sim-hours"
+              value={hoursPerDay}
+              onChange={(e) => setHoursPerDay(e.target.value)}
+            />
+          </div>
           <label className="flex h-9 items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -325,11 +346,7 @@ function Simulator({
               />
             </div>
           )}
-          <Button
-            variant="secondary"
-            disabled={busy || !Number(days)}
-            onClick={() => void run()}
-          >
+          <Button variant="secondary" disabled={busy || !canRun} onClick={() => void run()}>
             {busy ? "Cotizando…" : "Cotizar"}
           </Button>
         </div>
@@ -337,15 +354,21 @@ function Simulator({
         {quote && (
           <div className="rounded-sm bg-subtle p-3 text-sm">
             <p>
-              Base ({quote.days} días, escalón {quote.tier}): {money(quote.baseCents)}
+              {quote.days} {quote.days === 1 ? "día" : "días"} × {hours(quote.hoursPerDay)} hs ={" "}
+              {hours(quote.requestedHours)} hs × {money(quote.hourlyCents)}/h
             </p>
-            {quote.transferCents > 0 && <p>Traslado: {money(quote.transferCents)}</p>}
-            {quote.operatorCents > 0 && (
-              <p>Operario{requiresOperator ? " (obligatorio)" : ""}: {money(quote.operatorCents)}</p>
+            {quote.billedHours !== quote.requestedHours && (
+              <p className="text-text-3">
+                Se facturan {hours(quote.billedHours)} hs por el mínimo de{" "}
+                {hours(quote.minHours)} hs.
+              </p>
             )}
-            <p>Subtotal: {money(quote.subtotalCents)}</p>
-            <p>IVA {quote.ivaPct}%: {money(quote.ivaCents)}</p>
-            <p className="font-semibold">Total: {money(quote.totalCents)}</p>
+            <p>Máquina (con operario y combustible): {money(quote.machineCents)}</p>
+            {quote.transferCents > 0 && <p>Traslado: {money(quote.transferCents)}</p>}
+            <p className="font-semibold">Total: {money(quote.totalCents)} + IVA</p>
+            <p className="text-text-3">
+              El agente dice este número tal cual, aclarando que no incluye IVA.
+            </p>
           </div>
         )}
       </CardContent>

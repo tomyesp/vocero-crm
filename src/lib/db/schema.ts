@@ -1039,8 +1039,13 @@ export const machineModel = pgTable(
     description: text("description"),
     /** Ids de `mediaAsset` (storage local — la constitución veta terceros). */
     photos: jsonb("photos").notNull().default(sql`'[]'::jsonb`),
-    /** Hidrogrúas y equipos que solo se alquilan con operario del negocio. */
-    requiresOperator: boolean("requires_operator").notNull().default(false),
+    /**
+     * En RPM la máquina sale SIEMPRE con operario del negocio y la tarifa
+     * horaria ya lo incluye, así que este campo no suma un peso a ninguna
+     * cotización: define lo que el agente le DICE al lead. Sigue existiendo
+     * por si algún día se alquila una máquina pelada.
+     */
+    requiresOperator: boolean("requires_operator").notNull().default(true),
     /** Apagado = no aparece en catálogo ni en disponibilidad; no se borra. */
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1087,6 +1092,11 @@ export const machineUnit = pgTable(
  * cierra `validTo` y se crea otra fila. Una cotización vieja siempre puede
  * explicarse con la tarifa que regía ese día.
  *
+ * RPM cotiza la HORA DE MÁQUINA, así que acá hay UN precio por modelo: no
+ * hay escalón semanal ni mensual (una obra larga son más horas, no otra
+ * tarifa) ni renglón de operario, porque la hora ya lo incluye junto con el
+ * combustible. Lo único que se cobra aparte es el traslado.
+ *
  * Montos en CENTAVOS de la moneda del negocio, como `lead.amountCents`, pero
  * en bigint: un alquiler largo en ARS revienta el int4 en centavos.
  */
@@ -1100,17 +1110,23 @@ export const rateCard = pgTable(
     modelId: text("model_id")
       .notNull()
       .references(() => machineModel.id, { onDelete: "cascade" }),
-    dailyCents: bigint("daily_cents", { mode: "number" }).notNull(),
-    /** NULL = ese escalón no se ofrece y se cotiza con el diario. */
-    weeklyCents: bigint("weekly_cents", { mode: "number" }),
-    monthlyCents: bigint("monthly_cents", { mode: "number" }),
+    /**
+     * El precio de UNA hora de máquina, con operario y combustible adentro
+     * y SIN IVA — el catálogo del negocio está en neto y el agente lo aclara
+     * en cada cotización.
+     */
+    hourlyCents: bigint("hourly_cents", { mode: "number" }).notNull(),
+    /**
+     * Mínimo facturable del servicio, en horas. 0 = se cobran exactamente
+     * las horas pedidas. Está desde el día uno porque el mínimo es moneda
+     * corriente en el rubro y descubrirlo después no debería costar una
+     * migración.
+     */
+    minHours: integer("min_hours").notNull().default(0),
     transferBaseCents: bigint("transfer_base_cents", { mode: "number" })
       .notNull()
       .default(0),
     transferPerKmCents: bigint("transfer_per_km_cents", { mode: "number" })
-      .notNull()
-      .default(0),
-    operatorDailyCents: bigint("operator_daily_cents", { mode: "number" })
       .notNull()
       .default(0),
     validFrom: timestamp("valid_from").notNull().defaultNow(),
@@ -1179,6 +1195,11 @@ export const rental = pgTable(
     createdBy: text("created_by", { enum: ["agente", "humano"] })
       .notNull()
       .default("humano"),
+    /**
+     * Las horas de trabajo por día con las que se calculó el monto. NULL en
+     * los bloqueos de mantenimiento, que ocupan la máquina sin facturar.
+     */
+    hoursPerDay: integer("hours_per_day"),
     quotedAmountCents: bigint("quoted_amount_cents", { mode: "number" }),
     withTransfer: boolean("with_transfer").notNull().default(false),
     siteLocation: text("site_location"),
@@ -1218,6 +1239,8 @@ export const rentalOffer = pgTable(
       .notNull()
       .references(() => machineUnit.id, { onDelete: "cascade" }),
     period: tstzrange("period").notNull(),
+    /** Las horas por día con las que se calculó el monto; la reserva las copia. */
+    hoursPerDay: integer("hours_per_day").notNull(),
     /** El precio EXACTO que se le dijo al lead; la reserva lo copia. */
     quotedAmountCents: bigint("quoted_amount_cents", { mode: "number" }).notNull(),
     /** La etiqueta EXACTA que vio el cliente ("Retro JCB 3CX, 10 al 20/1"). */

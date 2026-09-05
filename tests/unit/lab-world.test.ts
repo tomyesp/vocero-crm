@@ -375,6 +375,7 @@ describe.runIf(dbAvailable)("mover la reserva del propio lead", () => {
         modelId,
         unitId,
         period,
+        hoursPerDay: 8,
         quotedAmountCents: 100_000,
         label: "Rodillo de prueba",
       },

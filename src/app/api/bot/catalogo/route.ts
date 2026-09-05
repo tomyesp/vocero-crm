@@ -9,8 +9,12 @@ export const dynamic = "force-dynamic";
  * 017 — El catálogo para el cerebro externo: la "knowledge base viva" de
  * máquinas. El agente NO puede nombrar una máquina que no salga de acá.
  *
- * Solo modelos activos, con specs, rango de precios vigente y cuántas
- * unidades existen (no cuántas están libres: eso es de /disponibilidad).
+ * Solo modelos activos, con specs, tarifa horaria vigente y cuántas unidades
+ * existen (no cuántas están libres: eso es de /disponibilidad).
+ *
+ * La tarifa que viaja acá es de REFERENCIA —"la hora sale tanto"— y alcanza
+ * para contestar "¿cuánto sale?" sin inventar nada. El precio de una obra
+ * concreta sigue saliendo de /cotizar.
  */
 export async function GET(req: Request) {
   // La bandera ANTES que la llave: sin inventario, el endpoint no existe.
@@ -49,12 +53,10 @@ export async function GET(req: Request) {
       unidades: m.units.filter((u) => u.status !== "baja").length,
       tarifa: m.currentRate
         ? {
-            diariaCents: m.currentRate.dailyCents,
-            semanalCents: m.currentRate.weeklyCents,
-            mensualCents: m.currentRate.monthlyCents,
+            horaCents: m.currentRate.hourlyCents,
+            minimoHoras: m.currentRate.minHours,
             trasladoBaseCents: m.currentRate.transferBaseCents,
             trasladoPorKmCents: m.currentRate.transferPerKmCents,
-            operarioDiaCents: m.currentRate.operatorDailyCents,
           }
         : null,
     }));
@@ -62,5 +64,15 @@ export async function GET(req: Request) {
   return Response.json({
     categorias: catalog.categories.map((c) => ({ id: c.id, nombre: c.name, slug: c.slug })),
     modelos,
+    // Condiciones del negocio que valen para TODO el catálogo. Van en la
+    // respuesta y no en el prompt para que el agente no las recite de memoria:
+    // si algún día cambian, cambian acá y el agente se entera solo.
+    condiciones: {
+      unidad: "hora",
+      incluyeOperario: true,
+      incluyeCombustible: true,
+      incluyeIva: false,
+      incluyeTraslado: false,
+    },
   });
 }

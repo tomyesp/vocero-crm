@@ -31,7 +31,8 @@ export const POST = withAuth(async (session, req: Request) => {
       brand: body.data.brand ?? null,
       description: body.data.description ?? null,
       specs: body.data.specs ?? {},
-      requiresOperator: body.data.requiresOperator ?? false,
+      // En RPM la máquina sale siempre con operario; lo raro es lo contrario.
+      requiresOperator: body.data.requiresOperator ?? true,
     })
     .returning();
   return Response.json({ model: inserted[0] }, { status: 201 });

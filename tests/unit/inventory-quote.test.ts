@@ -1,72 +1,74 @@
 import { describe, expect, it } from "vitest";
-import { computeQuote, IVA_PCT } from "@/server/inventory/quote";
+import { computeQuote, FULL_DAY_HOURS } from "@/server/inventory/quote";
 
 /**
  * 017 — El motor de cotización es puro a propósito: mismos números para el
- * endpoint del bot y para el simulador de la UI. Acá se fijan la tarifa
- * escalonada, los extras y el IVA.
+ * endpoint del bot y para el simulador de la UI. Acá se fija cómo cotiza RPM:
+ * la HORA de máquina, con operario y combustible adentro, SIN IVA, y el
+ * traslado como único extra.
  */
 
 const RATE = {
-  dailyCents: 210_000_00, // $210.000
-  weeklyCents: 1_150_000_00, // $1.150.000
-  monthlyCents: 3_900_000_00, // $3.900.000
+  hourlyCents: 32_000_00, // $32.000 la hora
+  minHours: 0,
   transferBaseCents: 60_000_00,
   transferPerKmCents: 1_200_00,
-  operatorDailyCents: 85_000_00,
 };
 
-const BASE_INPUT = { withTransfer: false, requiresOperator: false };
+const BASE_INPUT = { hoursPerDay: 8, withTransfer: false };
 
-describe("tarifa escalonada", () => {
-  it("menos de 7 días cotiza con la diaria", () => {
-    const q = computeQuote(RATE, { ...BASE_INPUT, days: 6 });
-    expect(q.tier).toBe("diaria");
-    expect(q.baseCents).toBe(6 * RATE.dailyCents);
+describe("precio por hora", () => {
+  it("el total es días × horas por día × tarifa", () => {
+    const q = computeQuote(RATE, { ...BASE_INPUT, days: 3 });
+    expect(q.requestedHours).toBe(24);
+    expect(q.machineCents).toBe(24 * RATE.hourlyCents);
+    expect(q.totalCents).toBe(24 * RATE.hourlyCents);
   });
 
-  it("7 días exactos saltan al escalón semanal", () => {
-    const q = computeQuote(RATE, { ...BASE_INPUT, days: 7 });
-    expect(q.tier).toBe("semanal");
-    expect(q.baseCents).toBe(RATE.weeklyCents);
+  it("media jornada sale la mitad que la jornada completa", () => {
+    const media = computeQuote(RATE, { days: 2, hoursPerDay: 4, withTransfer: false });
+    const entera = computeQuote(RATE, { days: 2, hoursPerDay: 8, withTransfer: false });
+    expect(media.machineCents * 2).toBe(entera.machineCents);
   });
 
-  it("10 días prorratean la semanal (y salen más baratos que 10 diarias)", () => {
-    const q = computeQuote(RATE, { ...BASE_INPUT, days: 10 });
-    expect(q.tier).toBe("semanal");
-    expect(q.baseCents).toBe(Math.round((RATE.weeklyCents * 10) / 7));
-    expect(q.baseCents).toBeLessThan(10 * RATE.dailyCents);
+  it("no hay escalones: 30 días valen 30 veces un día", () => {
+    const uno = computeQuote(RATE, { ...BASE_INPUT, days: 1 });
+    const treinta = computeQuote(RATE, { ...BASE_INPUT, days: 30 });
+    expect(treinta.machineCents).toBe(30 * uno.machineCents);
   });
 
-  it("30 días exactos cotizan la mensual completa", () => {
-    const q = computeQuote(RATE, { ...BASE_INPUT, days: 30 });
-    expect(q.tier).toBe("mensual");
-    expect(q.baseCents).toBe(RATE.monthlyCents);
-  });
-
-  it("45 días prorratean la mensual", () => {
-    const q = computeQuote(RATE, { ...BASE_INPUT, days: 45 });
-    expect(q.tier).toBe("mensual");
-    expect(q.baseCents).toBe(Math.round((RATE.monthlyCents * 45) / 30));
-  });
-
-  it("sin escalón mensual definido, 30+ días caen a la semanal — nunca se inventa un precio", () => {
-    const q = computeQuote({ ...RATE, monthlyCents: null }, { ...BASE_INPUT, days: 40 });
-    expect(q.tier).toBe("semanal");
-    expect(q.baseCents).toBe(Math.round((RATE.weeklyCents * 40) / 7));
-  });
-
-  it("sin semanal ni mensual todo es diaria", () => {
-    const q = computeQuote(
-      { ...RATE, weeklyCents: null, monthlyCents: null },
-      { ...BASE_INPUT, days: 40 }
-    );
-    expect(q.tier).toBe("diaria");
-    expect(q.baseCents).toBe(40 * RATE.dailyCents);
+  it("horas fraccionarias se redondean UNA vez, al final", () => {
+    const q = computeQuote({ ...RATE, hourlyCents: 33_333_33 }, { days: 1, hoursPerDay: 4.5, withTransfer: false });
+    expect(q.machineCents).toBe(Math.round(33_333_33 * 4.5));
   });
 });
 
-describe("extras y total", () => {
+describe("mínimo de horas", () => {
+  it("sin mínimo se factura exactamente lo pedido", () => {
+    const q = computeQuote(RATE, { days: 1, hoursPerDay: 2, withTransfer: false });
+    expect(q.billedHours).toBe(2);
+    expect(q.machineCents).toBe(2 * RATE.hourlyCents);
+  });
+
+  it("un trabajo más corto que el mínimo se cobra el mínimo", () => {
+    const q = computeQuote({ ...RATE, minHours: 4 }, { days: 1, hoursPerDay: 2, withTransfer: false });
+    expect(q.requestedHours).toBe(2);
+    expect(q.billedHours).toBe(4);
+    expect(q.machineCents).toBe(4 * RATE.hourlyCents);
+  });
+
+  it("el mínimo es del SERVICIO, no de cada día: 3 días de 2 hs son 6, no 12", () => {
+    const q = computeQuote({ ...RATE, minHours: 4 }, { days: 3, hoursPerDay: 2, withTransfer: false });
+    expect(q.billedHours).toBe(6);
+  });
+
+  it("por encima del mínimo el mínimo no toca nada", () => {
+    const q = computeQuote({ ...RATE, minHours: 4 }, { ...BASE_INPUT, days: 1 });
+    expect(q.billedHours).toBe(8);
+  });
+});
+
+describe("traslado y total", () => {
   it("traslado = base + km × costo/km, solo si se pide", () => {
     const con = computeQuote(RATE, { ...BASE_INPUT, days: 3, withTransfer: true, km: 25 });
     expect(con.transferCents).toBe(RATE.transferBaseCents + 25 * RATE.transferPerKmCents);
@@ -74,20 +76,22 @@ describe("extras y total", () => {
     expect(sin.transferCents).toBe(0);
   });
 
-  it("el operario se cobra por día cuando el modelo lo exige", () => {
-    const q = computeQuote(RATE, { days: 5, withTransfer: false, requiresOperator: true });
-    expect(q.operatorCents).toBe(5 * RATE.operatorDailyCents);
+  it("el total es máquina + traslado y NADA más: ni operario ni IVA", () => {
+    const q = computeQuote(RATE, { ...BASE_INPUT, days: 10, withTransfer: true, km: 40 });
+    expect(q.totalCents).toBe(q.machineCents + q.transferCents);
+    // El literal `false` es el contrato: nadie puede leer este desglose y
+    // creer que el número ya trae IVA.
+    expect(q.includesVat).toBe(false);
   });
 
-  it("IVA sobre el subtotal y desglose que cierra", () => {
-    const q = computeQuote(RATE, { days: 10, withTransfer: true, km: 40, requiresOperator: true });
-    expect(q.subtotalCents).toBe(q.baseCents + q.transferCents + q.operatorCents);
-    expect(q.ivaCents).toBe(Math.round((q.subtotalCents * IVA_PCT) / 100));
-    expect(q.totalCents).toBe(q.subtotalCents + q.ivaCents);
+  it("una jornada completa son 8 horas en todo el sistema", () => {
+    expect(FULL_DAY_HOURS).toBe(8);
   });
 
-  it("días inválidos revientan en vez de cotizar cualquier cosa", () => {
+  it("días u horas inválidos revientan en vez de cotizar cualquier cosa", () => {
     expect(() => computeQuote(RATE, { ...BASE_INPUT, days: 0 })).toThrow();
     expect(() => computeQuote(RATE, { ...BASE_INPUT, days: 1.5 })).toThrow();
+    expect(() => computeQuote(RATE, { days: 1, hoursPerDay: 0, withTransfer: false })).toThrow();
+    expect(() => computeQuote(RATE, { days: 1, hoursPerDay: 25, withTransfer: false })).toThrow();
   });
 });
